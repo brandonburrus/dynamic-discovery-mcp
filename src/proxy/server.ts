@@ -2,21 +2,23 @@ import process from "node:process";
 import { FastMCP } from "fastmcp";
 import { z } from "zod";
 import packageJson from "../../package.json" with { type: "json" };
+import type { ContentResult } from "fastmcp";
 import type { ToolCatalog } from "./tool-catalog.js";
-import type { UpstreamClient } from "./upstream-client.js";
+
+type ToolCaller = (name: string, input: Record<string, unknown>) => Promise<ContentResult>;
 
 type ProxyServerConfig = {
   catalog: ToolCatalog;
-  upstreamClient: UpstreamClient;
+  callTool: ToolCaller;
 };
 
 export class ProxyServer {
   private readonly catalog: ToolCatalog;
-  private readonly upstreamClient: UpstreamClient;
+  private readonly callTool: ToolCaller;
 
-  constructor({ catalog, upstreamClient }: ProxyServerConfig) {
+  constructor({ catalog, callTool }: ProxyServerConfig) {
     this.catalog = catalog;
-    this.upstreamClient = upstreamClient;
+    this.callTool = callTool;
   }
 
   async start(): Promise<void> {
@@ -46,7 +48,7 @@ export class ProxyServer {
           return this.catalog.getToolDetails(tool_name);
         }
 
-        const result = await this.upstreamClient.callTool(tool_name, tool_input);
+        const result = await this.callTool(tool_name, tool_input);
         return result;
       },
     });

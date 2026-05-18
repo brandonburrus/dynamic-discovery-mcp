@@ -1,7 +1,7 @@
 import process from "node:process";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolCatalog } from "../../src/proxy/tool-catalog.js";
-import type { UpstreamClient, UpstreamTool } from "../../src/proxy/upstream-client.js";
+import type { UpstreamTool } from "../../src/proxy/upstream-client.js";
 
 // Variables prefixed with "mock" are automatically hoisted by Vitest and are
 // available inside vi.mock() factory functions without needing vi.hoisted().
@@ -46,9 +46,7 @@ describe("ProxyServer", () => {
     tools: new Map<string, UpstreamTool>([["known_tool", knownTool]]),
   } as unknown as ToolCatalog;
 
-  const fakeUpstreamClient = {
-    callTool: vi.fn(),
-  } as unknown as UpstreamClient;
+  const fakeCallTool = vi.fn();
 
   let mockStderrWrite: ReturnType<typeof vi.spyOn>;
 
@@ -59,7 +57,7 @@ describe("ProxyServer", () => {
   });
 
   function buildServer(): InstanceType<typeof ProxyServer> {
-    return new ProxyServer({ catalog: fakeCatalog, upstreamClient: fakeUpstreamClient });
+    return new ProxyServer({ catalog: fakeCatalog, callTool: fakeCallTool });
   }
 
   describe("start()", () => {
@@ -107,7 +105,7 @@ describe("ProxyServer", () => {
   describe("use_tool execute", () => {
     it("calls upstreamClient.callTool for a known tool and returns the result", async () => {
       const callToolResult = { content: [{ type: "text", text: "ok" }] };
-      (fakeUpstreamClient.callTool as ReturnType<typeof vi.fn>).mockResolvedValue(callToolResult);
+      fakeCallTool.mockResolvedValue(callToolResult);
 
       await buildServer().start();
       const execute = captureExecute("use_tool");
@@ -117,7 +115,7 @@ describe("ProxyServer", () => {
         tool_input: { url: "https://example.com" },
       });
 
-      expect(fakeUpstreamClient.callTool).toHaveBeenCalledWith("known_tool", {
+      expect(fakeCallTool).toHaveBeenCalledWith("known_tool", {
         url: "https://example.com",
       });
       expect(result).toBe(callToolResult);
@@ -133,7 +131,7 @@ describe("ProxyServer", () => {
 
       const result = await execute({ tool_name: "unknown_tool", tool_input: {} });
 
-      expect(fakeUpstreamClient.callTool).not.toHaveBeenCalled();
+      expect(fakeCallTool).not.toHaveBeenCalled();
       expect(fakeCatalog.getToolDetails).toHaveBeenCalledWith("unknown_tool");
       expect(result).toBe("Unknown tool: unknown_tool");
     });

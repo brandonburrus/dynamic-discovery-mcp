@@ -33,6 +33,8 @@ Key points from the current spec:
 
 ```
 src/           # TypeScript source (entry: src/index.ts)
+  config/      # Config file schema (Zod) and loader (JSON + YAML)
+  proxy/       # Core proxy logic: upstream client, orchestrator, server, tool catalog
 tests/         # Vitest unit tests (mirror of src/ structure)
 dist/          # Build output (gitignored) — CJS + ESM + .d.ts
 .husky/        # Git hooks (commit-msg runs commitlint)
