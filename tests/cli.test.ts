@@ -49,9 +49,9 @@ describe("cli", () => {
 
   describe("when -- is not present in process.argv", () => {
     it("writes the usage error to stderr", async () => {
-      process.argv = ["node", "dynamic-mcp"];
+      process.argv = ["node", "dynmcp"];
 
-      await expect(cli.parseAsync(["node", "dynamic-mcp"])).rejects.toThrow("process.exit(1)");
+      await expect(cli.parseAsync(["node", "dynmcp"])).rejects.toThrow("process.exit(1)");
 
       expect(mockStderrWrite).toHaveBeenCalledWith(
         expect.stringContaining("no upstream command provided"),
@@ -59,9 +59,9 @@ describe("cli", () => {
     });
 
     it("calls process.exit(1)", async () => {
-      process.argv = ["node", "dynamic-mcp"];
+      process.argv = ["node", "dynmcp"];
 
-      await expect(cli.parseAsync(["node", "dynamic-mcp"])).rejects.toThrow("process.exit(1)");
+      await expect(cli.parseAsync(["node", "dynmcp"])).rejects.toThrow("process.exit(1)");
 
       expect(mockProcessExit).toHaveBeenCalledWith(1);
     });
@@ -69,11 +69,9 @@ describe("cli", () => {
 
   describe("when -- is present but no command follows", () => {
     it("writes the usage error to stderr", async () => {
-      process.argv = ["node", "dynamic-mcp", "--"];
+      process.argv = ["node", "dynmcp", "--"];
 
-      await expect(cli.parseAsync(["node", "dynamic-mcp", "--"])).rejects.toThrow(
-        "process.exit(1)",
-      );
+      await expect(cli.parseAsync(["node", "dynmcp", "--"])).rejects.toThrow("process.exit(1)");
 
       expect(mockStderrWrite).toHaveBeenCalledWith(
         expect.stringContaining("no upstream command provided"),
@@ -81,11 +79,9 @@ describe("cli", () => {
     });
 
     it("calls process.exit(1)", async () => {
-      process.argv = ["node", "dynamic-mcp", "--"];
+      process.argv = ["node", "dynmcp", "--"];
 
-      await expect(cli.parseAsync(["node", "dynamic-mcp", "--"])).rejects.toThrow(
-        "process.exit(1)",
-      );
+      await expect(cli.parseAsync(["node", "dynmcp", "--"])).rejects.toThrow("process.exit(1)");
 
       expect(mockProcessExit).toHaveBeenCalledWith(1);
     });
@@ -93,24 +89,17 @@ describe("cli", () => {
 
   describe("when a valid command is provided after --", () => {
     it("calls startProxy with the command and an empty args array", async () => {
-      process.argv = ["node", "dynamic-mcp", "--", "npx", "chrome-devtools-mcp"];
+      process.argv = ["node", "dynmcp", "--", "npx", "chrome-devtools-mcp"];
 
-      await cli.parseAsync(["node", "dynamic-mcp", "--", "npx", "chrome-devtools-mcp"]);
+      await cli.parseAsync(["node", "dynmcp", "--", "npx", "chrome-devtools-mcp"]);
 
       expect(mockStartProxy).toHaveBeenCalledWith("npx", ["chrome-devtools-mcp"]);
     });
 
     it("calls startProxy with the command and all subsequent args", async () => {
-      process.argv = ["node", "dynamic-mcp", "--", "npx", "-y", "chrome-devtools-mcp@latest"];
+      process.argv = ["node", "dynmcp", "--", "npx", "-y", "chrome-devtools-mcp@latest"];
 
-      await cli.parseAsync([
-        "node",
-        "dynamic-mcp",
-        "--",
-        "npx",
-        "-y",
-        "chrome-devtools-mcp@latest",
-      ]);
+      await cli.parseAsync(["node", "dynmcp", "--", "npx", "-y", "chrome-devtools-mcp@latest"]);
 
       expect(mockStartProxy).toHaveBeenCalledWith("npx", ["-y", "chrome-devtools-mcp@latest"]);
     });
@@ -119,10 +108,10 @@ describe("cli", () => {
   describe("when startProxy rejects", () => {
     it("writes the error message to stderr", async () => {
       mockStartProxy.mockRejectedValue(new Error("connection failed"));
-      process.argv = ["node", "dynamic-mcp", "--", "npx", "chrome-devtools-mcp"];
+      process.argv = ["node", "dynmcp", "--", "npx", "chrome-devtools-mcp"];
 
       await expect(
-        cli.parseAsync(["node", "dynamic-mcp", "--", "npx", "chrome-devtools-mcp"]),
+        cli.parseAsync(["node", "dynmcp", "--", "npx", "chrome-devtools-mcp"]),
       ).rejects.toThrow("process.exit(1)");
 
       expect(mockStderrWrite).toHaveBeenCalledWith(expect.stringContaining("connection failed"));
@@ -130,10 +119,10 @@ describe("cli", () => {
 
     it("calls process.exit(1)", async () => {
       mockStartProxy.mockRejectedValue(new Error("connection failed"));
-      process.argv = ["node", "dynamic-mcp", "--", "npx", "chrome-devtools-mcp"];
+      process.argv = ["node", "dynmcp", "--", "npx", "chrome-devtools-mcp"];
 
       await expect(
-        cli.parseAsync(["node", "dynamic-mcp", "--", "npx", "chrome-devtools-mcp"]),
+        cli.parseAsync(["node", "dynmcp", "--", "npx", "chrome-devtools-mcp"]),
       ).rejects.toThrow("process.exit(1)");
 
       expect(mockProcessExit).toHaveBeenCalledWith(1);

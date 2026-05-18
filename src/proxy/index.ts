@@ -14,7 +14,7 @@ export async function startProxy(command: string, args: string[]): Promise<void>
       .disconnect()
       .catch((error: unknown) => {
         process.stderr.write(
-          `dynamic-mcp: error during disconnect: ${error instanceof Error ? error.message : String(error)}\n`,
+          `dynmcp: error during disconnect: ${error instanceof Error ? error.message : String(error)}\n`,
         );
       })
       .finally(() => process.exit(exitCode));
@@ -32,9 +32,7 @@ export async function startProxy(command: string, args: string[]): Promise<void>
   try {
     await upstreamClient.connect();
   } catch (error) {
-    process.stderr.write(
-      `dynamic-mcp: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
+    process.stderr.write(`dynmcp: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exit(1);
   }
 
@@ -42,9 +40,7 @@ export async function startProxy(command: string, args: string[]): Promise<void>
   try {
     tools = await upstreamClient.listTools();
   } catch (error) {
-    process.stderr.write(
-      `dynamic-mcp: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
+    process.stderr.write(`dynmcp: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exit(1);
   }
 

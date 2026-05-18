@@ -1,5 +1,5 @@
 {
-  "name": "dynamic-mcp",
+  "name": "dynmcp",
   "version": "0.0.1",
   "description": "Dynamic MCP context management tool for AI MCP-enabled agents and clients.",
   "author": "Brandon Burrus <brandon@burrus.io>",
@@ -35,7 +35,7 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "dynamic-mcp": "./dist/index.js"
+    "dynmcp": "./dist/index.js"
   },
   "exports": {
     ".": {

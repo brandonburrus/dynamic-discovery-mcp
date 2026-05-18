@@ -21,7 +21,7 @@ export class ProxyServer {
 
   async start(): Promise<void> {
     const server = new FastMCP({
-      name: "dynamic-mcp",
+      name: "dynamic-discovery-mcp",
       version: packageJson.version as `${number}.${number}.${number}`,
     });
 

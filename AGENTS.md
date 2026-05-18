@@ -10,7 +10,7 @@ Key points from the current spec:
 - Local stdio only — no remote/HTTP deployment.
 - Two exposed tools: `discover_tool` (dynamic description from upstream catalog) and `use_tool` (static description, proxies calls).
 - All tool names are namespaced as `<mcp-name>/<tool-name>`.
-- Single upstream MCP: `dynamic-mcp -- <command>`. Multiple upstream MCPs: config file (`mcp.json`, `.mcp.json`, or `-c <path>`).
+- Single upstream MCP: `dynmcp -- <command>`. Multiple upstream MCPs: config file (`mcp.json`, `.mcp.json`, or `-c <path>`).
 - Config file validated at runtime via Zod; the same schema generates a published JSON Schema for editor support.
 
 ## Project Conventions

@@ -1,4 +1,4 @@
-# dynamic-mcp — Project Specification
+# dynamic-discovery-mcp — Project Specification
 
 > **This file is the authoritative blueprint for this project.**
 > No feature may be built, changed, or removed without first updating this spec and reaching agreement with the project owner. If it is not in this file, it does not get built.
@@ -18,14 +18,14 @@ The core insight: for any given agent goal, only a small subset of tools is actu
 
 ## Solution
 
-`dynamic-mcp` is a local proxy MCP that sits in front of one or more upstream MCPs running on the same machine. Instead of exposing every upstream tool directly, it exposes exactly two meta-tools:
+`dynamic-discovery-mcp` is a local proxy MCP that sits in front of one or more upstream MCPs running on the same machine. Instead of exposing every upstream tool directly, it exposes exactly two meta-tools:
 
 - **`discover_tool`** — lets the agent find out what a specific tool does and how to call it.
 - **`use_tool`** — lets the agent call any tool by name with the appropriate input.
 
 The agent workflow becomes: identify what tools exist at a high level → discover the one(s) relevant to the current goal → use them. The full tool schemas of irrelevant tools never enter the context window.
 
-`dynamic-mcp` runs locally only, communicating with both the agent host and upstream MCPs over stdio.
+`dynamic-discovery-mcp` runs locally only, communicating with both the agent host and upstream MCPs over stdio.
 
 ---
 
@@ -33,9 +33,9 @@ The agent workflow becomes: identify what tools exist at a high level → discov
 
 | Field | Value |
 |---|---|
-| npm package name | `dynamic-mcp` |
-| CLI binary name | `dynamic-mcp` |
-| MCP server name | `dynamic-mcp` |
+| npm package name | `dynmcp` |
+| CLI binary name | `dynmcp` |
+| MCP server name | `dynamic-discovery-mcp` |
 | Repository | `brandonburrus/dynamic-discovery-mcp` |
 
 ---
@@ -119,7 +119,7 @@ Executes a previously-discovered upstream tool.
 
 ## Tool Name Namespacing
 
-All tool names exposed by `dynamic-mcp` are prefixed with the upstream MCP's configured `name` using a `/` separator:
+All tool names exposed by `dynamic-discovery-mcp` are prefixed with the upstream MCP's configured `name` using a `/` separator:
 
 ```
 <mcp-name>/<original-tool-name>
@@ -129,7 +129,7 @@ Examples:
 - A tool named `browser_navigate` from an MCP configured as `chrome-devtools` becomes `chrome-devtools/browser_navigate`.
 - A tool named `read_file` from an MCP configured as `filesystem` becomes `filesystem/read_file`.
 
-**Single MCP (`--` mode) — no namespace prefix:** When launched with `dynamic-mcp -- <command>`, tool names are exposed as-is without any namespace prefix. There is only one upstream MCP so there is no ambiguity to resolve.
+**Single MCP (`--` mode) — no namespace prefix:** When launched with `dynmcp -- <command>`, tool names are exposed as-is without any namespace prefix. There is only one upstream MCP so there is no ambiguity to resolve.
 
 **Config file mode — namespace always required:** When a config file is used, every tool name is prefixed with the MCP's `name` value. This is mandatory because multiple MCPs may expose tools with the same original name.
 
@@ -146,7 +146,7 @@ To proxy multiple upstream MCPs simultaneously, a config file must be provided. 
 2. `mcp.json` in the current working directory
 3. `.mcp.json` in the current working directory
 
-If none of these are found and no `--` command is provided, `dynamic-mcp` exits with a clear error.
+If none of these are found and no `--` command is provided, `dynmcp` exits with a clear error.
 
 ### Supported Formats
 
@@ -164,7 +164,7 @@ Each entry in `mcp` is a map where the key is the MCP name and the value is its 
 
 ```json
 {
-  "$schema": "https://unpkg.com/dynamic-mcp/schema/mcp-config.json",
+  "$schema": "https://unpkg.com/dynmcp/schema/mcp-config.json",
   "mcp": {
     "chrome-devtools": {
       "transport": "stdio",
@@ -204,7 +204,7 @@ Each entry in `mcp` is a map where the key is the MCP name and the value is its 
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `transport` | `"stdio" \| "streamable-http" \| "sse"` | Yes | How `dynamic-mcp` connects to this upstream MCP. |
+| `transport` | `"stdio" \| "streamable-http" \| "sse"` | Yes | How `dynamic-discovery-mcp` connects to this upstream MCP. |
 
 **`stdio` transport fields:**
 
@@ -256,7 +256,7 @@ mcp:
 
 ## Runtime Behavior
 
-`dynamic-mcp` runs locally only. It communicates with the agent host (e.g. an IDE or agent runner) over stdio. Upstream MCPs are connected to based on their configured transport — spawned as child processes for `stdio`, or connected to over HTTP for `streamable-http` and `sse`.
+`dynmcp` runs locally only. It communicates with the agent host (e.g. an IDE or agent runner) over stdio. Upstream MCPs are connected to based on their configured transport — spawned as child processes for `stdio`, or connected to over HTTP for `streamable-http` and `sse`.
 
 **Single MCP (`--` command):**
 
@@ -264,8 +264,8 @@ mcp:
 # Normal upstream MCP invocation
 npx -y chrome-devtools-mcp@latest
 
-# Same MCP, proxied through dynamic-mcp
-npx -y dynamic-mcp -- chrome-devtools-mcp@latest
+# Same MCP, proxied through dynmcp
+npx -y dynmcp -- chrome-devtools-mcp@latest
 ```
 
 Everything after `--` is treated as the command to launch the upstream MCP. This mode supports exactly one upstream MCP. To proxy multiple MCPs, use a config file instead.
@@ -274,10 +274,10 @@ Everything after `--` is treated as the command to launch the upstream MCP. This
 
 ```bash
 # Auto-discover mcp.json or .mcp.json in cwd
-npx -y dynamic-mcp
+npx -y dynmcp
 
 # Explicit config file path
-npx -y dynamic-mcp --config ./my-config.json
+npx -y dynmcp --config ./my-config.json
 ```
 
 **Startup sequence:**
@@ -295,7 +295,7 @@ npx -y dynamic-mcp --config ./my-config.json
 ## CLI Interface
 
 ```
-dynamic-mcp [options] [-- <upstream-command> [upstream-args...]]
+dynmcp [options] [-- <upstream-command> [upstream-args...]]
 ```
 
 | Flag / Option | Short | Description |
@@ -315,7 +315,7 @@ dynamic-mcp [options] [-- <upstream-command> [upstream-args...]]
 
 The following are explicitly out of scope and must not be built unless this spec is updated:
 
-- Remote / HTTP deployment of `dynamic-mcp` itself.
+- Remote / HTTP deployment of `dynmcp` itself.
 - Tool filtering, allow-listing, or deny-listing of upstream tools.
 - Caching or memoizing upstream tool responses.
 - A web UI or dashboard.

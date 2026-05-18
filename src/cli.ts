@@ -17,10 +17,7 @@ export const cli = new Command(packageJson.name)
   .description(packageJson.description)
   .version(packageJson.version)
   .addHelpText("beforeAll", cliBanner)
-  .addHelpText(
-    "after",
-    "\nExample:\n  dynamic-mcp@latest -- npx -y chrome-devtools-mcp@latest\n",
-  )
+  .addHelpText("after", "\nExample:\n  dynmcp -- npx -y chrome-devtools-mcp@latest\n")
   .allowExcessArguments(true)
   .passThroughOptions(true)
   .action(async () => {
@@ -28,9 +25,9 @@ export const cli = new Command(packageJson.name)
 
     if (separatorIndex === -1) {
       process.stderr.write(
-        "dynamic-mcp: no upstream command provided.\n" +
-          "Usage: dynamic-mcp -- <command> [args...]\n" +
-          "Example: dynamic-mcp -- npx -y chrome-devtools-mcp@latest\n",
+        "dynmcp: no upstream command provided.\n" +
+          "Usage: dynmcp -- <command> [args...]\n" +
+          "Example: dynmcp -- npx -y chrome-devtools-mcp@latest\n",
       );
       process.exit(1);
     }
@@ -39,9 +36,9 @@ export const cli = new Command(packageJson.name)
 
     if (command === undefined) {
       process.stderr.write(
-        "dynamic-mcp: no upstream command provided.\n" +
-          "Usage: dynamic-mcp -- <command> [args...]\n" +
-          "Example: dynamic-mcp -- npx -y chrome-devtools-mcp@latest\n",
+        "dynmcp: no upstream command provided.\n" +
+          "Usage: dynmcp -- <command> [args...]\n" +
+          "Example: dynmcp -- npx -y chrome-devtools-mcp@latest\n",
       );
       process.exit(1);
     }
@@ -49,9 +46,7 @@ export const cli = new Command(packageJson.name)
     try {
       await startProxy(command, args);
     } catch (error) {
-      process.stderr.write(
-        `dynamic-mcp: ${error instanceof Error ? error.message : String(error)}\n`,
-      );
+      process.stderr.write(`dynmcp: ${error instanceof Error ? error.message : String(error)}\n`);
       process.exit(1);
     }
   });
