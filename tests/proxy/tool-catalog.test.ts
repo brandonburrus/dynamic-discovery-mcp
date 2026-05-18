@@ -21,13 +21,13 @@ const fixtures: UpstreamTool[] = [toolA, toolB];
 describe("ToolCatalog", () => {
   describe("discoverToolDescription", () => {
     it("contains the <tools> wrapper", () => {
-      const catalog = new ToolCatalog(fixtures);
+      const catalog = ToolCatalog.fromFlat(fixtures);
       expect(catalog.discoverToolDescription).toContain("<tools>");
       expect(catalog.discoverToolDescription).toContain("</tools>");
     });
 
     it("lists both tools as '- <name>: <description>' bullet lines", () => {
-      const catalog = new ToolCatalog(fixtures);
+      const catalog = ToolCatalog.fromFlat(fixtures);
       expect(catalog.discoverToolDescription).toContain(
         `- browser_navigate: Navigate the browser to a URL`,
       );
@@ -36,7 +36,7 @@ describe("ToolCatalog", () => {
 
     it("lists tools in alphabetical order (browser_navigate before browser_screenshot)", () => {
       // Pass in reverse order to confirm sorting is applied
-      const catalog = new ToolCatalog([toolB, toolA]);
+      const catalog = ToolCatalog.fromFlat([toolB, toolA]);
       const navigateIndex = catalog.discoverToolDescription.indexOf("browser_navigate");
       const screenshotIndex = catalog.discoverToolDescription.indexOf("browser_screenshot");
       expect(navigateIndex).toBeLessThan(screenshotIndex);
@@ -45,39 +45,39 @@ describe("ToolCatalog", () => {
 
   describe("getToolDetails", () => {
     it("returns a string containing the tool name and description for a known tool", () => {
-      const catalog = new ToolCatalog(fixtures);
+      const catalog = ToolCatalog.fromFlat(fixtures);
       const details = catalog.getToolDetails("browser_navigate");
       expect(details).toContain("browser_navigate");
       expect(details).toContain("Navigate the browser to a URL");
     });
 
     it("includes 'Output Schema:' when the tool has an outputSchema", () => {
-      const catalog = new ToolCatalog(fixtures);
+      const catalog = ToolCatalog.fromFlat(fixtures);
       const details = catalog.getToolDetails("browser_screenshot");
       expect(details).toContain("Output Schema:");
     });
 
     it("includes annotation key-value lines when the tool has annotations", () => {
-      const catalog = new ToolCatalog(fixtures);
+      const catalog = ToolCatalog.fromFlat(fixtures);
       const details = catalog.getToolDetails("browser_screenshot");
       expect(details).toContain("readOnlyHint: true");
       expect(details).toContain("openWorldHint: false");
     });
 
     it("does NOT include 'Output Schema:' when the tool has no outputSchema", () => {
-      const catalog = new ToolCatalog(fixtures);
+      const catalog = ToolCatalog.fromFlat(fixtures);
       const details = catalog.getToolDetails("browser_navigate");
       expect(details).not.toContain("Output Schema:");
     });
 
     it("returns a string containing 'Unknown tool:' for an unknown name", () => {
-      const catalog = new ToolCatalog(fixtures);
+      const catalog = ToolCatalog.fromFlat(fixtures);
       const details = catalog.getToolDetails("nonexistent_tool");
       expect(details).toContain("Unknown tool:");
     });
 
     it("lists available tool names in the error string for an unknown name", () => {
-      const catalog = new ToolCatalog(fixtures);
+      const catalog = ToolCatalog.fromFlat(fixtures);
       const details = catalog.getToolDetails("nonexistent_tool");
       expect(details).toContain("browser_navigate");
       expect(details).toContain("browser_screenshot");

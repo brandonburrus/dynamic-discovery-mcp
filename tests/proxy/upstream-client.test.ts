@@ -18,16 +18,19 @@ vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
   },
 }));
 
-vi.mock("@modelcontextprotocol/sdk/client/stdio.js", () => ({
-  StdioClientTransport: class {
-    onerror: ((error: Error) => void) | undefined;
-  },
-}));
-
 const { UpstreamClient } = await import("../../src/proxy/upstream-client.js");
 
+function createMockTransport() {
+  return {
+    onerror: undefined,
+    start: vi.fn().mockResolvedValue(undefined),
+    send: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 async function buildConnectedClient(): Promise<InstanceType<typeof UpstreamClient>> {
-  const client = new UpstreamClient({ command: "test-server", args: [] });
+  const client = new UpstreamClient({ name: "test-server", transport: createMockTransport() });
   await client.connect();
   return client;
 }

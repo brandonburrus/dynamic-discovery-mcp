@@ -8,13 +8,29 @@ export class ToolCatalog {
   readonly tools: ReadonlyMap<string, UpstreamTool>;
   readonly discoverToolDescription: string;
 
-  constructor(upstreamTools: UpstreamTool[]) {
+  private constructor(tools: Map<string, UpstreamTool>, description: string) {
+    this.tools = tools;
+    this.discoverToolDescription = description;
+  }
+
+  static fromFlat(upstreamTools: UpstreamTool[]): ToolCatalog {
     const toolMap = new Map<string, UpstreamTool>();
     for (const tool of upstreamTools) {
       toolMap.set(tool.name, tool);
     }
-    this.tools = toolMap;
-    this.discoverToolDescription = buildDiscoverToolDescription(upstreamTools);
+    const description = buildFlatDescription(upstreamTools);
+    return new ToolCatalog(toolMap, description);
+  }
+
+  static fromGrouped(groups: Map<string, UpstreamTool[]>): ToolCatalog {
+    const toolMap = new Map<string, UpstreamTool>();
+    for (const [mcpName, tools] of groups) {
+      for (const tool of tools) {
+        toolMap.set(`${mcpName}/${tool.name}`, tool);
+      }
+    }
+    const description = buildGroupedDescription(groups);
+    return new ToolCatalog(toolMap, description);
   }
 
   getToolDetails(toolName: string): string {
@@ -25,20 +41,34 @@ export class ToolCatalog {
       return `Unknown tool: "${toolName}". Available tools: ${sortedNames}`;
     }
 
-    return buildToolDetailsString(tool);
+    return buildToolDetailsString(toolName, tool);
   }
 }
 
-function buildDiscoverToolDescription(tools: UpstreamTool[]): string {
+function buildFlatDescription(tools: UpstreamTool[]): string {
   const sortedTools = [...tools].sort((a, b) => a.name.localeCompare(b.name));
   const toolLines = sortedTools.map(tool => `- ${tool.name}: ${tool.description}`).join("\n");
 
   return `${DISCOVER_TOOL_PREAMBLE}\n\n<tools>\n${toolLines}\n</tools>`;
 }
 
-function buildToolDetailsString(tool: UpstreamTool): string {
+function buildGroupedDescription(groups: Map<string, UpstreamTool[]>): string {
+  const sortedMcpNames = [...groups.keys()].sort();
+  const sections = sortedMcpNames.map(mcpName => {
+    const tools = groups.get(mcpName)!;
+    const sortedTools = [...tools].sort((a, b) => a.name.localeCompare(b.name));
+    const toolLines = sortedTools
+      .map(tool => `- ${mcpName}/${tool.name}: ${tool.description}`)
+      .join("\n");
+    return `${mcpName}:\n${toolLines}`;
+  });
+
+  return `${DISCOVER_TOOL_PREAMBLE}\n\n<tools>\n${sections.join("\n\n")}\n</tools>`;
+}
+
+function buildToolDetailsString(displayName: string, tool: UpstreamTool): string {
   const lines: string[] = [
-    `Tool: ${tool.name}`,
+    `Tool: ${displayName}`,
     `Description: ${tool.description}`,
     "",
     "Input Schema:",

@@ -1,6 +1,6 @@
 import process from "node:process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { ContentResult } from "fastmcp";
 
 export type ToolAnnotations = {
@@ -20,36 +20,27 @@ export type UpstreamTool = {
 };
 
 type UpstreamClientConfig = {
-  command: string;
-  args: string[];
+  name: string;
+  transport: Transport;
   onTransportError?: (error: Error) => void;
 };
 
 export class UpstreamClient {
-  private readonly command: string;
-  private readonly args: string[];
+  private readonly transport: Transport;
   private readonly onTransportError: (error: Error) => void;
   private client: Client | null = null;
-  private transport: StdioClientTransport | null = null;
 
-  constructor({ command, args, onTransportError }: UpstreamClientConfig) {
-    this.command = command;
-    this.args = args;
+  constructor({ name, transport, onTransportError }: UpstreamClientConfig) {
+    this.transport = transport;
     this.onTransportError =
       onTransportError ??
       ((error: Error) => {
-        process.stderr.write(`Upstream MCP transport error: ${error.message}\n`);
+        process.stderr.write(`[${name}] Upstream MCP transport error: ${error.message}\n`);
       });
   }
 
   async connect(): Promise<void> {
-    this.transport = new StdioClientTransport({
-      command: this.command,
-      args: this.args,
-    });
-
     this.transport.onerror = this.onTransportError;
-
     this.client = new Client({ name: "dynamic-discovery-mcp", version: "1.0.0" });
     await this.client.connect(this.transport);
   }
@@ -91,10 +82,8 @@ export class UpstreamClient {
       throw new Error("Client is not connected. Call connect() first.");
     }
 
-    return this.client.callTool({
-      name,
-      arguments: input,
-    }) as Promise<ContentResult>;
+    const result = await this.client.callTool({ name, arguments: input });
+    return result as ContentResult;
   }
 
   async disconnect(): Promise<void> {
@@ -104,6 +93,5 @@ export class UpstreamClient {
 
     await this.client.close();
     this.client = null;
-    this.transport = null;
   }
 }

@@ -22,7 +22,11 @@ vi.mock("../../src/proxy/upstream-client.js", () => ({
 }));
 
 vi.mock("../../src/proxy/tool-catalog.js", () => ({
-  ToolCatalog: class {},
+  ToolCatalog: class {
+    static fromFlat() {
+      return new this();
+    }
+  },
 }));
 
 const mockProxyServerStart = vi.fn().mockResolvedValue(undefined);

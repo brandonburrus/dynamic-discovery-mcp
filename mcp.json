@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/dynmcp/schema/mcp-config.json",
+  "mcp": {
+    "chrome-devtools": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"]
+    },
+    "aws-knowledge": {
+      "transport": "streamable-http",
+      "url": "https://knowledge-mcp.global.api.aws"
+    }
+  }
+}

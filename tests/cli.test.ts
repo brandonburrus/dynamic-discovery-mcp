@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Variables prefixed with "mock" are automatically hoisted by Vitest and are
 // available inside vi.mock() factory functions without needing vi.hoisted().
 const mockStartProxy = vi.fn().mockResolvedValue(undefined);
+const mockStartProxyFromConfig = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("figlet", () => ({
   default: {
@@ -21,6 +22,7 @@ vi.mock("chalk", () => ({
 
 vi.mock("../src/proxy/index.js", () => ({
   startProxy: mockStartProxy,
+  startProxyFromConfig: mockStartProxyFromConfig,
 }));
 
 const { cli } = await import("../src/cli.js");
@@ -33,6 +35,7 @@ describe("cli", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStartProxy.mockResolvedValue(undefined);
+    mockStartProxyFromConfig.mockResolvedValue(undefined);
 
     mockProcessExit = vi
       .spyOn(process, "exit")
@@ -47,22 +50,30 @@ describe("cli", () => {
     process.argv = originalArgv;
   });
 
-  describe("when -- is not present in process.argv", () => {
-    it("writes the usage error to stderr", async () => {
+  describe("when -- is not present in process.argv (config file mode)", () => {
+    it("calls startProxyFromConfig with undefined (auto-discover)", async () => {
       process.argv = ["node", "dynmcp"];
 
-      await expect(cli.parseAsync(["node", "dynmcp"])).rejects.toThrow("process.exit(1)");
+      await cli.parseAsync(["node", "dynmcp"]);
 
-      expect(mockStderrWrite).toHaveBeenCalledWith(
-        expect.stringContaining("no upstream command provided"),
-      );
+      expect(mockStartProxyFromConfig).toHaveBeenCalledWith(undefined);
     });
 
-    it("calls process.exit(1)", async () => {
+    it("calls startProxyFromConfig with the explicit config path when -c is provided", async () => {
+      process.argv = ["node", "dynmcp", "-c", "./my-config.json"];
+
+      await cli.parseAsync(["node", "dynmcp", "-c", "./my-config.json"]);
+
+      expect(mockStartProxyFromConfig).toHaveBeenCalledWith("./my-config.json");
+    });
+
+    it("writes error to stderr and exits when startProxyFromConfig rejects", async () => {
+      mockStartProxyFromConfig.mockRejectedValue(new Error("No config file found"));
       process.argv = ["node", "dynmcp"];
 
       await expect(cli.parseAsync(["node", "dynmcp"])).rejects.toThrow("process.exit(1)");
 
+      expect(mockStderrWrite).toHaveBeenCalledWith(expect.stringContaining("No config file found"));
       expect(mockProcessExit).toHaveBeenCalledWith(1);
     });
   });
