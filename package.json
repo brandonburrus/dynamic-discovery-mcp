@@ -45,9 +45,12 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "schema"
   ],
   "scripts": {
+    "generate:schema": "tsx scripts/generate-schema.ts",
+    "prebuild": "tsx scripts/generate-schema.ts",
     "build": "tsup",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
