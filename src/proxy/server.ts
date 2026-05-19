@@ -39,12 +39,25 @@ import { z } from "zod";
 import packageJson from "../../package.json" with { type: "json" };
 import type { ToolCatalog } from "./tool-catalog.js";
 
+export type ProgressEvent = {
+  progress: number;
+  total?: number;
+  message?: string;
+};
+
 /**
- * Per-call options forwarded by the proxy server's request handlers to the orchestrator
- * so the host's `AbortSignal` can propagate through to the upstream call.
+ * Per-call options forwarded by the proxy server's request handlers to the orchestrator.
+ *
+ * - `signal`: propagates host-side cancellation through to the upstream call. When the
+ *   host cancels its incoming request, the SDK client emits `notifications/cancelled`
+ *   to the upstream.
+ * - `onprogress`: invoked when the upstream emits a `notifications/progress` for the
+ *   in-flight call. The proxy server uses this to translate upstream progress events
+ *   into host-facing notifications under the host's original progress token.
  */
 export type ProxyCallOptions = {
   signal?: AbortSignal;
+  onprogress?: (progress: ProgressEvent) => void;
 };
 
 export type ToolCaller = (
@@ -310,6 +323,41 @@ export class ProxyServer {
     }
   }
 
+  /**
+   * Builds per-call options for a request handler. Extracts the host's
+   * `progressToken` from `_meta` (if any) and wires an `onprogress` callback that
+   * re-emits progress notifications back to the host under that same token. This
+   * is the single seam where progress translation lives — every forward-direction
+   * handler routes through here.
+   */
+  private buildCallOptions(
+    request: { params: { _meta?: { progressToken?: string | number } } },
+    extra: {
+      signal: AbortSignal;
+      sendNotification: (notification: {
+        method: string;
+        params?: Record<string, unknown>;
+      }) => Promise<void>;
+    },
+  ): ProxyCallOptions {
+    const options: ProxyCallOptions = { signal: extra.signal };
+    const progressToken = request.params._meta?.progressToken;
+    if (progressToken !== undefined) {
+      options.onprogress = progress => {
+        void extra.sendNotification({
+          method: "notifications/progress",
+          params: {
+            progressToken,
+            progress: progress.progress,
+            total: progress.total,
+            message: progress.message,
+          },
+        });
+      };
+    }
+    return options;
+  }
+
   private registerToolHandlers(server: Server): void {
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
@@ -346,7 +394,11 @@ export class ProxyServer {
               content: [{ type: "text", text: catalog.getToolDetails(args.tool_name) }],
             };
           }
-          return await this.callTool(args.tool_name, args.tool_input, { signal: extra.signal });
+          return await this.callTool(
+            args.tool_name,
+            args.tool_input,
+            this.buildCallOptions(request, extra),
+          );
         }
 
         return {
@@ -375,17 +427,20 @@ export class ProxyServer {
     server.setRequestHandler(
       ReadResourceRequestSchema,
       async (request, extra): Promise<ReadResourceResult> => {
-        return callbacks.readResource(request.params.uri, { signal: extra.signal });
+        return callbacks.readResource(request.params.uri, this.buildCallOptions(request, extra));
       },
     );
 
     server.setRequestHandler(SubscribeRequestSchema, async (request, extra) => {
-      await callbacks.subscribeResource(request.params.uri, { signal: extra.signal });
+      await callbacks.subscribeResource(request.params.uri, this.buildCallOptions(request, extra));
       return {};
     });
 
     server.setRequestHandler(UnsubscribeRequestSchema, async (request, extra) => {
-      await callbacks.unsubscribeResource(request.params.uri, { signal: extra.signal });
+      await callbacks.unsubscribeResource(
+        request.params.uri,
+        this.buildCallOptions(request, extra),
+      );
       return {};
     });
   }
@@ -401,9 +456,11 @@ export class ProxyServer {
     server.setRequestHandler(
       GetPromptRequestSchema,
       async (request, extra): Promise<GetPromptResult> => {
-        return callbacks.getPrompt(request.params.name, request.params.arguments, {
-          signal: extra.signal,
-        });
+        return callbacks.getPrompt(
+          request.params.name,
+          request.params.arguments,
+          this.buildCallOptions(request, extra),
+        );
       },
     );
   }
@@ -412,14 +469,14 @@ export class ProxyServer {
     server.setRequestHandler(
       CompleteRequestSchema,
       async (request, extra): Promise<CompleteResult> => {
-        return callback(request.params, { signal: extra.signal });
+        return callback(request.params, this.buildCallOptions(request, extra));
       },
     );
   }
 
   private registerLoggingHandler(server: Server, callback: LoggingSetLevelCallback): void {
     server.setRequestHandler(SetLevelRequestSchema, async (request, extra) => {
-      await callback(request.params.level, { signal: extra.signal });
+      await callback(request.params.level, this.buildCallOptions(request, extra));
       return {};
     });
   }

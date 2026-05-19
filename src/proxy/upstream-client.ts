@@ -56,13 +56,31 @@ export type UpstreamNotificationHandlers = {
 };
 
 /**
- * Per-call options forwarded to the SDK so cancellation can propagate from the host
- * down to the upstream MCP. When the host cancels its incoming request, the SDK
- * server handler's `signal` aborts; passing that signal through these options causes
- * the SDK client to emit `notifications/cancelled` to the upstream.
+ * Progress event payload as observed on a forward-direction call. The SDK Client
+ * auto-assigns a progress token for our outbound request, so the upstream's
+ * `notifications/progress` for that request are routed here. The proxy translates
+ * these into a fresh `notifications/progress` to the host under the host's original
+ * progress token.
+ */
+export type ProgressEvent = {
+  progress: number;
+  total?: number;
+  message?: string;
+};
+
+/**
+ * Per-call options forwarded to the SDK so cancellation and progress can propagate
+ * from the host down to the upstream MCP and back.
+ *
+ * - `signal`: aborting the host's incoming request aborts this signal, which causes
+ *   the SDK client to emit `notifications/cancelled` to the upstream.
+ * - `onprogress`: invoked whenever the upstream emits a progress notification for
+ *   the in-flight request. The proxy translates these into host-facing progress
+ *   notifications under the host's original progress token.
  */
 export type UpstreamCallOptions = {
   signal?: AbortSignal;
+  onprogress?: (progress: ProgressEvent) => void;
 };
 
 /**
