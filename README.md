@@ -102,6 +102,64 @@ When no `--` command is provided, `dynmcp` looks for a config file in this order
 
 MCP names (the keys in the config) must match `^[a-z0-9][a-z0-9-]*$`.
 
+## Environment Variable Interpolation
+
+Config files can reference environment variables in any string-typed leaf value using shell-style syntax. This is useful for keeping secrets (bearer tokens, API keys) and host-specific values (paths, ports) out of the config file itself.
+
+```json
+{
+  "mcp": {
+    "remote": {
+      "transport": "streamable-http",
+      "url": "${MCP_URL:-https://example.com/mcp}",
+      "headers": {
+        "Authorization": "Bearer ${MCP_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+### Syntax
+
+| Form | Behavior |
+|---|---|
+| `${VAR}` | Replaced with the value of `VAR`. Hard error at startup if `VAR` is undefined. |
+| `${VAR:-default}` | Replaced with `VAR` if set and non-empty, otherwise the literal `default` (may contain spaces, colons, etc.). |
+| `$${...}` | Escape — emits a literal `${...}` with no interpolation. |
+
+Interpolation only applies to **leaf string values** inside the `mcp` map (and nested objects/arrays within it). Map keys, the top-level `$schema` field, and the top-level `env` field are never interpolated. Partial-string interpolation works — `"Bearer ${TOKEN}"` is valid.
+
+If any referenced variables are missing without a default, `dynmcp` exits at startup with an error listing **all** of them at once (not one at a time).
+
+### Sources (`env` field)
+
+A top-level `env` field controls where variables are read from:
+
+| Value | Behavior |
+|---|---|
+| `"enable"` (default) | Loads `.env` file (if present) and merges with `process.env`. `.env` values take precedence over `process.env` for the same key. |
+| `"dotenv"` | Loads from `.env` file only. `process.env` is ignored. |
+| `"process"` | Reads from `process.env` only. No `.env` file is loaded. |
+| `"disable"` | Disables interpolation entirely — `${VAR}` is left literal. |
+
+```json
+{
+  "env": "process",
+  "mcp": { /* ... */ }
+}
+```
+
+### `.env` File Discovery
+
+By default, `dynmcp` looks for a file literally named `.env` in the current working directory. To use a different path, pass `--env` / `-e`:
+
+```bash
+dynmcp --env ./secrets.env
+```
+
+Combining `--env` with `env: "disable"` or `env: "process"` is rejected as incoherent (no `.env` would be loaded). If `--env` points to a file that does not exist, `dynmcp` exits with an error.
+
 ## CLI Reference
 
 ```
@@ -113,6 +171,7 @@ dynmcp [options] [-- <upstream-command> [upstream-args...]]
 | `--version` | `-v` | Print the package version and exit |
 | `--help` | `-h` | Print usage information and exit |
 | `--config <path>` | `-c` | Path to config file (JSON or YAML) |
+| `--env <path>` | `-e` | Path to a custom `.env` file for variable interpolation |
 | `--` | | Everything after is the upstream MCP command (single-MCP mode) |
 
 ### Mode Resolution

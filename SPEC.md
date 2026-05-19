@@ -160,11 +160,20 @@ The config file schema is defined and validated with a Zod schema at runtime. Th
 
 Each entry in `mcp` is a map where the key is the MCP name and the value is its connection config, discriminated by the `transport` field. Three transport types are supported.
 
+**Top-level fields:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `$schema` | `string` | No | Pointer to the published JSON Schema for editor validation. Not interpreted at runtime. |
+| `env` | `"enable" \| "dotenv" \| "process" \| "disable"` | No | Controls environment variable interpolation in config values. Defaults to `"enable"`. See [Environment Variable Interpolation](#environment-variable-interpolation). |
+| `mcp` | `Record<string, McpEntry>` | Yes | Map of upstream MCPs, keyed by name. |
+
 **Full schema:**
 
 ```json
 {
   "$schema": "https://unpkg.com/dynmcp/schema/mcp-config.json",
+  "env": "enable",
   "mcp": {
     "chrome-devtools": {
       "transport": "stdio",
@@ -180,19 +189,26 @@ Each entry in `mcp` is a map where the key is the MCP name and the value is its 
       "transport": "streamable-http",
       "url": "https://example.com/mcp",
       "headers": {
-        "Authorization": "Bearer my-token"
+        "Authorization": "Bearer ${API_TOKEN}"
       }
     },
     "remote-sse-mcp": {
       "transport": "sse",
       "url": "https://example.com/sse",
       "headers": {
-        "Authorization": "Bearer my-token"
+        "Authorization": "Bearer ${API_TOKEN:-anonymous}"
       }
     }
   }
 }
 ```
+
+**Top-level fields:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `mcp` | `Record<string, McpEntry>` | Yes | Map of upstream MCPs to proxy. |
+| `env` | `"enable" \| "dotenv" \| "process" \| "disable"` | No | Controls environment variable interpolation. Defaults to `"enable"`. See [Environment Variable Interpolation](#environment-variable-interpolation). |
 
 **Map key:**
 
@@ -228,6 +244,7 @@ Each entry in `mcp` is a map where the key is the MCP name and the value is its 
 ### YAML equivalent
 
 ```yaml
+env: enable
 mcp:
   chrome-devtools:
     transport: stdio
@@ -251,6 +268,75 @@ mcp:
     headers:
       Authorization: "Bearer my-token"
 ```
+
+---
+
+## Environment Variable Interpolation
+
+### Overview
+
+Config file values may reference environment variables using `${VAR}` syntax. Interpolation runs **after** the config file is parsed but **before** Zod validation, so the validated config contains only fully-resolved string values.
+
+This lets users keep secrets (API tokens, paths, credentials) out of the config file and out of version control.
+
+### Syntax
+
+| Form | Meaning |
+|---|---|
+| `${VAR}` | Substitute the value of `VAR`. If `VAR` is undefined, startup fails. |
+| `${VAR:-default}` | Substitute the value of `VAR`, or the literal `default` if `VAR` is undefined or empty. The default may contain any characters, including spaces and colons (e.g. `${URL:-http://localhost:8080}`). |
+| `$${...}` | Escape sequence. Resolves to the literal `${...}` with the leading `$` stripped. |
+
+Bare `$VAR` references are **not** supported — only the `${...}` brace form is recognized.
+
+### Scope
+
+Interpolation applies only to **leaf string values** in the config — i.e. wherever the schema expects a `string`. Specifically:
+
+- `stdio.command`
+- Each element of `stdio.args`
+- Each value in `stdio.env`
+- `streamable-http.url`, `sse.url`
+- Each value in `streamable-http.headers`, `sse.headers`
+
+Interpolation does **not** apply to:
+
+- Map keys (MCP names under `mcp`, env var names under `stdio.env`, header names under `headers`)
+- The top-level `$schema` field
+- The top-level `env` field
+
+Both **whole-string** (`"${TOKEN}"`) and **partial** (`"Bearer ${TOKEN}"`) interpolation are supported.
+
+### Environment Variable Sources
+
+Controlled by the top-level `env` field. Default: `"enable"`.
+
+| Value | Behavior |
+|---|---|
+| `"enable"` | Load `.env` file (if present) **and** read `process.env`. When the same variable is defined in both, the `.env` file wins. |
+| `"dotenv"` | Load `.env` file only. `process.env` is ignored entirely. |
+| `"process"` | Use `process.env` only. No `.env` file is loaded. |
+| `"disable"` | Interpolation is turned off. `${VAR}` is preserved as a literal string in config values; the escape form `$${...}` has no effect. |
+
+### `.env` File Discovery
+
+By default, the `.env` file is looked up in the **current working directory** with the literal filename `.env`. Only a single file is supported — multi-environment patterns like `.env.local` or `.env.production` are out of scope.
+
+A custom path may be specified via the `--env` / `-e` CLI flag. When this flag is provided:
+
+- The file at the given path **must exist**; a missing file causes a startup error.
+- The flag is incoherent with `env: "process"` or `env: "disable"`; the combination causes a startup error.
+
+When `env` is `"enable"` or `"dotenv"` and no `--env` flag is given, a missing `.env` file in cwd is **not** an error — interpolation simply proceeds with whatever sources remain (process.env for `"enable"`, nothing for `"dotenv"`).
+
+### Errors
+
+All interpolation errors surface at startup, before any upstream MCP is connected. The following are fatal:
+
+- A `${VAR}` reference with no default value, where `VAR` is not defined in any active source. All missing variables are collected and reported together in a single error message — not one at a time.
+- `--env` combined with `env: "disable"` or `env: "process"`.
+- `--env <path>` where the path does not exist or is not readable.
+- A `.env` file that cannot be parsed; the underlying parse error is surfaced.
 
 ---
 
@@ -303,6 +389,7 @@ dynmcp [options] [-- <upstream-command> [upstream-args...]]
 | `--version` | `-v` | Print the package version and exit |
 | `--help` | `-h` | Print usage information and exit |
 | `--config <path>` | `-c` | Path to config file (JSON or YAML) |
+| `--env <path>` | `-e` | Path to a custom `.env` file for environment variable interpolation. See [Environment Variable Interpolation](#environment-variable-interpolation). |
 | `--` | | Delimiter; everything after is treated as the upstream MCP command (single-MCP mode) |
 
 **Mode resolution:**
@@ -322,7 +409,6 @@ The following are explicitly out of scope and must not be built unless this spec
 - Automatic upstream MCP discovery (e.g. scanning a config directory).
 - Resource proxying (MCP resources are out of scope; tools only).
 - Prompt proxying (MCP prompts are out of scope; tools only).
-- Environment variable substitution in config file values.
 
 ---
 
@@ -333,3 +419,4 @@ The following are explicitly out of scope and must not be built unless this spec
 | 2026-05-18 | Initial spec drafted |
 | 2026-05-18 | Resolved: multi-MCP syntax (config file), tool name collisions (namespace prefix), config file format (JSON + YAML), `discover_tool` description format (`<tools>` XML block) |
 | 2026-05-18 | Added `streamable-http` and `sse` transport support to config file schema for connecting to remote upstream MCPs |
+| 2026-05-18 | Added environment variable interpolation in config file leaf string values (`${VAR}` and `${VAR:-default}` syntax, `$${...}` escape). New top-level `env` field (`"enable"` default, `"dotenv"`, `"process"`, `"disable"`). New `--env` / `-e` CLI flag for custom `.env` path. Removed corresponding non-goal. |

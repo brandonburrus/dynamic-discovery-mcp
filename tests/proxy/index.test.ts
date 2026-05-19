@@ -22,10 +22,8 @@ vi.mock("../../src/proxy/upstream-client.js", () => ({
 }));
 
 vi.mock("../../src/proxy/tool-catalog.js", () => ({
-  ToolCatalog: class {
-    static fromFlat() {
-      return new this();
-    }
+  ToolCatalog: {
+    fromFlat: () => ({}),
   },
 }));
 
