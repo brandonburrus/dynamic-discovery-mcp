@@ -12,6 +12,7 @@ Key points from the current spec:
 - All tool names are namespaced as `<mcp-name>/<tool-name>`.
 - Single upstream MCP: `dynmcp -- <command>`. Multiple upstream MCPs: config file (`mcp.json`, `.mcp.json`, or `-c <path>`).
 - Config file validated at runtime via Zod; the same schema generates a published JSON Schema for editor support.
+- Config file values support environment variable interpolation: `${VAR}`, `${VAR:-default}`, and `$${...}` escape. Controlled via top-level `env` field (`"enable"` default, `"dotenv"`, `"process"`, `"disable"`) and `--env` / `-e` CLI flag for custom `.env` paths.
 
 ## Project Conventions
 

@@ -5,6 +5,16 @@
   "description": "Configuration file for dynmcp. Declares the set of upstream MCPs to proxy through dynamic-discovery-mcp.",
   "type": "object",
   "properties": {
+    "env": {
+      "type": "string",
+      "enum": [
+        "enable",
+        "dotenv",
+        "process",
+        "disable"
+      ],
+      "description": "Controls environment variable interpolation in config values. \"enable\" (default) merges .env and process.env (.env wins). \"dotenv\" loads .env only. \"process\" uses process.env only. \"disable\" turns interpolation off."
+    },
     "mcp": {
       "type": "object",
       "propertyNames": {

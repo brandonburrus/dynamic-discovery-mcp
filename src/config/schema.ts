@@ -4,6 +4,14 @@ export const MCP_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
 const mcpName = z.string().regex(MCP_NAME_PATTERN);
 
+export const envModeSchema = z
+  .enum(["enable", "dotenv", "process", "disable"])
+  .describe(
+    'Controls environment variable interpolation in config values. "enable" (default) merges .env and process.env (.env wins). "dotenv" loads .env only. "process" uses process.env only. "disable" turns interpolation off.',
+  );
+
+export type EnvMode = z.infer<typeof envModeSchema>;
+
 const stdioTransport = z
   .object({
     transport: z.literal("stdio"),
@@ -43,6 +51,7 @@ const transportConfig = z.discriminatedUnion("transport", [
 ]);
 
 export const mcpConfigSchema = z.object({
+  env: envModeSchema.optional(),
   mcp: z
     .record(mcpName, transportConfig)
     .refine(obj => Object.keys(obj).length > 0, { message: "At least one MCP must be configured" }),

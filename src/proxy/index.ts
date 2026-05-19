@@ -69,10 +69,17 @@ export async function startProxy(command: string, args: string[]): Promise<void>
   }
 }
 
-export async function startProxyFromConfig(configPath?: string): Promise<void> {
+export interface StartProxyFromConfigOptions {
+  configPath?: string;
+  envFilePath?: string;
+}
+
+export async function startProxyFromConfig(
+  options: StartProxyFromConfigOptions = {},
+): Promise<void> {
   let isShuttingDown = false;
 
-  const config = loadConfig(configPath);
+  const config = loadConfig(options);
 
   const mcps = new Map<string, { transport: ReturnType<typeof createTransport> }>();
   for (const [name, entry] of Object.entries(config.mcp)) {

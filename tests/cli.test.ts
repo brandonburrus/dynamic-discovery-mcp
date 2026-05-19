@@ -56,7 +56,10 @@ describe("cli", () => {
 
       await cli.parseAsync(["node", "dynmcp"]);
 
-      expect(mockStartProxyFromConfig).toHaveBeenCalledWith(undefined);
+      expect(mockStartProxyFromConfig).toHaveBeenCalledWith({
+        configPath: undefined,
+        envFilePath: undefined,
+      });
     });
 
     it("calls startProxyFromConfig with the explicit config path when -c is provided", async () => {
@@ -64,7 +67,43 @@ describe("cli", () => {
 
       await cli.parseAsync(["node", "dynmcp", "-c", "./my-config.json"]);
 
-      expect(mockStartProxyFromConfig).toHaveBeenCalledWith("./my-config.json");
+      expect(mockStartProxyFromConfig).toHaveBeenCalledWith({
+        configPath: "./my-config.json",
+        envFilePath: undefined,
+      });
+    });
+
+    it("passes the custom .env path when -e is provided", async () => {
+      process.argv = ["node", "dynmcp", "-e", "./custom.env"];
+
+      await cli.parseAsync(["node", "dynmcp", "-e", "./custom.env"]);
+
+      expect(mockStartProxyFromConfig).toHaveBeenCalledWith({
+        configPath: undefined,
+        envFilePath: "./custom.env",
+      });
+    });
+
+    it("passes the custom .env path when --env is provided", async () => {
+      process.argv = ["node", "dynmcp", "--env", "./custom.env"];
+
+      await cli.parseAsync(["node", "dynmcp", "--env", "./custom.env"]);
+
+      expect(mockStartProxyFromConfig).toHaveBeenCalledWith({
+        configPath: undefined,
+        envFilePath: "./custom.env",
+      });
+    });
+
+    it("passes both --config and --env together", async () => {
+      process.argv = ["node", "dynmcp", "-c", "./mcp.json", "-e", "./.env.local"];
+
+      await cli.parseAsync(["node", "dynmcp", "-c", "./mcp.json", "-e", "./.env.local"]);
+
+      expect(mockStartProxyFromConfig).toHaveBeenCalledWith({
+        configPath: "./mcp.json",
+        envFilePath: "./.env.local",
+      });
     });
 
     it("writes error to stderr and exits when startProxyFromConfig rejects", async () => {
