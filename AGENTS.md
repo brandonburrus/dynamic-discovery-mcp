@@ -33,8 +33,10 @@ Key points from the current spec:
 
 ```
 src/           # TypeScript source (entry: src/index.ts)
-  config/      # Config file schema (Zod) and loader (JSON + YAML)
+  config/      # Config file schema (Zod), loader (JSON + YAML), and JSON Schema generator
   proxy/       # Core proxy logic: upstream client, orchestrator, server, tool catalog
+scripts/       # Build-time scripts (e.g. generate-schema.ts)
+schema/        # Generated JSON Schema files (committed, shipped in npm tarball)
 tests/         # Vitest unit tests (mirror of src/ structure)
 dist/          # Build output (gitignored) — CJS + ESM + .d.ts
 .husky/        # Git hooks (commit-msg runs commitlint)
@@ -49,7 +51,8 @@ commitlint.config.js # Extends @commitlint/config-conventional
 
 | Script | Purpose |
 |---|---|
-| `npm run build` | Compile with tsup to `dist/` |
+| `npm run build` | Compile with tsup to `dist/` (runs `generate:schema` as prebuild) |
+| `npm run generate:schema` | Generate `schema/mcp-config.json` from Zod schema |
 | `npm run typecheck` | Type-check without emitting |
 | `npm run check` | Biome lint + format (write) |
 | `npm test` | Run vitest once |
