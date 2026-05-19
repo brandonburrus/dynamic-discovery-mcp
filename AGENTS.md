@@ -35,7 +35,7 @@ Key points from the current spec:
 ```
 src/           # TypeScript source (entry: src/index.ts)
   config/      # Config file schema (Zod), loader (JSON + YAML), and JSON Schema generator
-  proxy/       # Core proxy logic: upstream client, orchestrator, server, tool catalog
+  proxy/       # Full-fidelity MCP proxy: upstream clients, orchestrator, server, catalogs, routers, capability aggregation. See src/proxy/AGENTS.md.
 scripts/       # Build-time scripts (e.g. generate-schema.ts)
 schema/        # Generated JSON Schema files (committed, shipped in npm tarball)
 tests/         # Vitest unit tests (mirror of src/ structure)
