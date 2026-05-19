@@ -24,10 +24,7 @@ export const cli = new Command(packageJson.name)
       "  dynmcp --config ./mcp.json\n",
   )
   .option("-c, --config <path>", "Path to config file (JSON or YAML)")
-  .option(
-    "-e, --env <path>",
-    "Path to a .env file for environment variable interpolation",
-  )
+  .option("-e, --env <path>", "Path to a .env file for environment variable interpolation")
   .allowExcessArguments(true)
   .passThroughOptions(true)
   .action(async (_options, cmd) => {

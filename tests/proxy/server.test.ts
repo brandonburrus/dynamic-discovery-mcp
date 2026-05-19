@@ -1,37 +1,24 @@
-import process from "node:process";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import {
+  LoggingMessageNotificationSchema,
+  PromptListChangedNotificationSchema,
+  ResourceListChangedNotificationSchema,
+  ResourceUpdatedNotificationSchema,
+  type ServerCapabilities,
+  ToolListChangedNotificationSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolCatalog } from "../../src/proxy/tool-catalog.js";
+import {
+  type CompletionCallback,
+  type LoggingSetLevelCallback,
+  type PromptCallbacks,
+  ProxyServer,
+  type ResourceCallbacks,
+  type ToolCaller,
+} from "../../src/proxy/server.js";
 import type { UpstreamTool } from "../../src/proxy/upstream-client.js";
-
-// Variables prefixed with "mock" are automatically hoisted by Vitest and are
-// available inside vi.mock() factory functions without needing vi.hoisted().
-const mockAddTool = vi.fn();
-const mockFastMcpStart = vi.fn().mockResolvedValue(undefined);
-
-vi.mock("fastmcp", () => ({
-  FastMCP: class {
-    addTool = mockAddTool;
-    start = mockFastMcpStart;
-  },
-}));
-
-const { ProxyServer } = await import("../../src/proxy/server.js");
-
-type AddToolConfig = {
-  name: string;
-  execute: (args: Record<string, unknown>) => unknown;
-};
-
-/** Extracts the execute callback registered for a named tool from addTool spy calls. */
-function captureExecute(toolName: string): (args: Record<string, unknown>) => unknown {
-  const call = (mockAddTool.mock.calls as AddToolConfig[][]).find(
-    ([config]) => config.name === toolName,
-  );
-  if (call === undefined) {
-    throw new Error(`addTool was never called with name "${toolName}"`);
-  }
-  return call[0].execute;
-}
 
 const knownTool: UpstreamTool = {
   name: "known_tool",
@@ -39,101 +26,625 @@ const knownTool: UpstreamTool = {
   inputSchema: { type: "object" },
 };
 
-describe("ProxyServer", () => {
-  const fakeCatalog = {
-    discoverToolDescription: "Discover a tool by name",
-    getToolDetails: vi.fn(),
-    tools: new Map<string, UpstreamTool>([["known_tool", knownTool]]),
+type FakeCatalogOverrides = {
+  discoverToolDescription?: string;
+  getToolDetails?: (name: string) => string;
+  tools?: Map<string, UpstreamTool>;
+};
+
+function makeCatalog(overrides: FakeCatalogOverrides = {}): {
+  catalog: ToolCatalog;
+  getToolDetails: ReturnType<typeof vi.fn>;
+} {
+  const getToolDetails = vi.fn(overrides.getToolDetails ?? (() => "details"));
+  const catalog = {
+    discoverToolDescription: overrides.discoverToolDescription ?? "Discover a tool by name",
+    getToolDetails,
+    tools: overrides.tools ?? new Map<string, UpstreamTool>([["known_tool", knownTool]]),
   } as unknown as ToolCatalog;
+  return { catalog, getToolDetails };
+}
 
-  const fakeCallTool = vi.fn();
+type Pair = {
+  client: Client;
+  proxy: ProxyServer;
+  close: () => Promise<void>;
+};
 
-  let mockStderrWrite: ReturnType<typeof vi.spyOn>;
+type StartOpts = {
+  catalog: ToolCatalog;
+  callTool?: ToolCaller;
+  capabilities?: ServerCapabilities;
+  resources?: ResourceCallbacks;
+  prompts?: PromptCallbacks;
+  complete?: CompletionCallback;
+  setLoggingLevel?: LoggingSetLevelCallback;
+  onRootsListChanged?: () => void | Promise<void>;
+};
+
+async function startPair(opts: StartOpts): Promise<Pair> {
+  const callTool: ToolCaller =
+    opts.callTool ?? (async () => ({ content: [{ type: "text", text: "noop" }] }));
+  const proxy = new ProxyServer({
+    catalog: () => opts.catalog,
+    capabilities: opts.capabilities ?? { tools: { listChanged: true } },
+    callTool,
+    resources: opts.resources,
+    prompts: opts.prompts,
+    complete: opts.complete,
+    setLoggingLevel: opts.setLoggingLevel,
+    onRootsListChanged: opts.onRootsListChanged,
+  });
+  const server = proxy.buildServer();
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test-client", version: "0.0.0" });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  return {
+    client,
+    proxy,
+    close: async () => {
+      await client.close();
+      await server.close();
+    },
+  };
+}
+
+describe("ProxyServer", () => {
+  let openPairs: Pair[] = [];
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockFastMcpStart.mockResolvedValue(undefined);
-    mockStderrWrite = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    openPairs = [];
   });
 
-  function buildServer(): InstanceType<typeof ProxyServer> {
-    return new ProxyServer({ catalog: fakeCatalog, callTool: fakeCallTool });
+  afterEach(async () => {
+    await Promise.all(openPairs.map(pair => pair.close()));
+    openPairs = [];
+  });
+
+  async function start(opts: StartOpts): Promise<Pair> {
+    const pair = await startPair(opts);
+    openPairs.push(pair);
+    return pair;
   }
 
-  describe("start()", () => {
-    it("calls server.start with stdio transport", async () => {
-      await buildServer().start();
+  describe("tools/list", () => {
+    it("advertises exactly discover_tool and use_tool", async () => {
+      const { catalog } = makeCatalog();
+      const { client } = await start({ catalog });
 
-      expect(mockFastMcpStart).toHaveBeenCalledWith({ transportType: "stdio" });
+      const result = await client.listTools();
+      const names = result.tools.map(tool => tool.name).sort();
+
+      expect(names).toEqual(["discover_tool", "use_tool"]);
     });
 
-    it("writes the startup message to process.stderr", async () => {
-      await buildServer().start();
+    it("uses the catalog's discoverToolDescription as the discover_tool description", async () => {
+      const { catalog } = makeCatalog({
+        discoverToolDescription: "<tools>\n- known_tool: A known tool\n</tools>",
+      });
+      const { client } = await start({ catalog });
 
-      expect(mockStderrWrite).toHaveBeenCalledWith(
-        "Starting dynamic-discovery-mcp server over stdio\n",
-      );
+      const result = await client.listTools();
+      const discover = result.tools.find(tool => tool.name === "discover_tool");
+
+      expect(discover?.description).toBe("<tools>\n- known_tool: A known tool\n</tools>");
     });
 
-    it("registers both discover_tool and use_tool via addTool", async () => {
-      await buildServer().start();
+    it("uses a static description for use_tool", async () => {
+      const { catalog } = makeCatalog();
+      const { client } = await start({ catalog });
 
-      const registeredNames = (mockAddTool.mock.calls as AddToolConfig[][]).map(
-        ([config]) => config.name,
+      const result = await client.listTools();
+      const useTool = result.tools.find(tool => tool.name === "use_tool");
+
+      expect(useTool?.description).toBe(
+        "Use a tool that was previously discovered with the discover_tool tool.",
       );
-      expect(registeredNames).toContain("discover_tool");
-      expect(registeredNames).toContain("use_tool");
     });
   });
 
-  describe("discover_tool execute", () => {
-    it("calls catalog.getToolDetails with the provided tool_name and returns the result", async () => {
-      (fakeCatalog.getToolDetails as ReturnType<typeof vi.fn>).mockReturnValue(
-        "tool details string",
-      );
+  describe("discover_tool", () => {
+    it("calls catalog.getToolDetails with the provided tool_name and returns the text", async () => {
+      const { catalog, getToolDetails } = makeCatalog({
+        getToolDetails: () => "tool details string",
+      });
+      const { client } = await start({ catalog });
 
-      await buildServer().start();
-      const execute = captureExecute("discover_tool");
+      const result = await client.callTool({
+        name: "discover_tool",
+        arguments: { tool_name: "known_tool" },
+      });
 
-      const result = await execute({ tool_name: "known_tool" });
-
-      expect(fakeCatalog.getToolDetails).toHaveBeenCalledWith("known_tool");
-      expect(result).toBe("tool details string");
+      expect(getToolDetails).toHaveBeenCalledWith("known_tool");
+      expect(result.content).toEqual([{ type: "text", text: "tool details string" }]);
     });
   });
 
-  describe("use_tool execute", () => {
-    it("calls upstreamClient.callTool for a known tool and returns the result", async () => {
-      const callToolResult = { content: [{ type: "text", text: "ok" }] };
-      fakeCallTool.mockResolvedValue(callToolResult);
+  describe("use_tool", () => {
+    it("invokes callTool for a known tool and returns its result verbatim", async () => {
+      const expectedResult = { content: [{ type: "text" as const, text: "ok" }] };
+      const callTool = vi.fn<ToolCaller>().mockResolvedValue(expectedResult);
+      const { catalog } = makeCatalog();
+      const { client } = await start({ catalog, callTool });
 
-      await buildServer().start();
-      const execute = captureExecute("use_tool");
-
-      const result = await execute({
-        tool_name: "known_tool",
-        tool_input: { url: "https://example.com" },
+      const result = await client.callTool({
+        name: "use_tool",
+        arguments: { tool_name: "known_tool", tool_input: { url: "https://example.com" } },
       });
 
-      expect(fakeCallTool).toHaveBeenCalledWith("known_tool", {
-        url: "https://example.com",
-      });
-      expect(result).toBe(callToolResult);
+      expect(callTool).toHaveBeenCalledWith(
+        "known_tool",
+        { url: "https://example.com" },
+        expect.anything(),
+      );
+      expect(result.content).toEqual(expectedResult.content);
     });
 
-    it("falls back to catalog.getToolDetails for an unknown tool and does NOT call upstreamClient.callTool", async () => {
-      (fakeCatalog.getToolDetails as ReturnType<typeof vi.fn>).mockReturnValue(
-        "Unknown tool: unknown_tool",
+    it("falls back to discover_tool details when the tool is unknown and does NOT call callTool", async () => {
+      const callTool = vi.fn<ToolCaller>();
+      const { catalog, getToolDetails } = makeCatalog({
+        getToolDetails: () => "Unknown tool: foo. Available tools: known_tool",
+      });
+      const { client } = await start({ catalog, callTool });
+
+      const result = await client.callTool({
+        name: "use_tool",
+        arguments: { tool_name: "foo", tool_input: {} },
+      });
+
+      expect(callTool).not.toHaveBeenCalled();
+      expect(getToolDetails).toHaveBeenCalledWith("foo");
+      expect(result.content).toEqual([
+        { type: "text", text: "Unknown tool: foo. Available tools: known_tool" },
+      ]);
+    });
+
+    it("defaults tool_input to an empty object when not provided", async () => {
+      const callTool = vi
+        .fn<ToolCaller>()
+        .mockResolvedValue({ content: [{ type: "text", text: "" }] });
+      const { catalog } = makeCatalog();
+      const { client } = await start({ catalog, callTool });
+
+      await client.callTool({
+        name: "use_tool",
+        arguments: { tool_name: "known_tool" },
+      });
+
+      expect(callTool).toHaveBeenCalledWith("known_tool", {}, expect.anything());
+    });
+  });
+
+  describe("resources", () => {
+    const resourceA = { uri: "file:///a", name: "A" };
+    const resourceB = { uri: "file:///b", name: "B" };
+    const templateA = { uriTemplate: "file:///{path}", name: "FS" };
+
+    function buildResourceCallbacks(): {
+      callbacks: ResourceCallbacks;
+      spies: {
+        listResources: ReturnType<typeof vi.fn>;
+        listResourceTemplates: ReturnType<typeof vi.fn>;
+        readResource: ReturnType<typeof vi.fn>;
+        subscribeResource: ReturnType<typeof vi.fn>;
+        unsubscribeResource: ReturnType<typeof vi.fn>;
+      };
+    } {
+      const listResources = vi.fn(() => [resourceA, resourceB]);
+      const listResourceTemplates = vi.fn(() => [templateA]);
+      const readResource = vi.fn(async (uri: string) => ({
+        contents: [{ uri, text: `contents of ${uri}`, mimeType: "text/plain" }],
+      }));
+      const subscribeResource = vi.fn(async () => {});
+      const unsubscribeResource = vi.fn(async () => {});
+      return {
+        callbacks: {
+          listResources,
+          listResourceTemplates,
+          readResource,
+          subscribeResource,
+          unsubscribeResource,
+        },
+        spies: {
+          listResources,
+          listResourceTemplates,
+          readResource,
+          subscribeResource,
+          unsubscribeResource,
+        },
+      };
+    }
+
+    const RESOURCE_CAPS: ServerCapabilities = {
+      tools: { listChanged: true },
+      resources: { subscribe: true, listChanged: true },
+    };
+
+    it("resources/list returns what the callback provides", async () => {
+      const { catalog } = makeCatalog();
+      const { callbacks, spies } = buildResourceCallbacks();
+      const { client } = await start({
+        catalog,
+        capabilities: RESOURCE_CAPS,
+        resources: callbacks,
+      });
+
+      const result = await client.listResources();
+
+      expect(spies.listResources).toHaveBeenCalled();
+      expect(result.resources.map(r => r.uri)).toEqual(["file:///a", "file:///b"]);
+    });
+
+    it("resources/templates/list returns what the callback provides", async () => {
+      const { catalog } = makeCatalog();
+      const { callbacks, spies } = buildResourceCallbacks();
+      const { client } = await start({
+        catalog,
+        capabilities: RESOURCE_CAPS,
+        resources: callbacks,
+      });
+
+      const result = await client.listResourceTemplates();
+
+      expect(spies.listResourceTemplates).toHaveBeenCalled();
+      expect(result.resourceTemplates.map(t => t.uriTemplate)).toEqual(["file:///{path}"]);
+    });
+
+    it("resources/read routes by URI to the callback", async () => {
+      const { catalog } = makeCatalog();
+      const { callbacks, spies } = buildResourceCallbacks();
+      const { client } = await start({
+        catalog,
+        capabilities: RESOURCE_CAPS,
+        resources: callbacks,
+      });
+
+      const result = await client.readResource({ uri: "file:///a" });
+
+      expect(spies.readResource).toHaveBeenCalledWith("file:///a", expect.anything());
+      const first = result.contents[0];
+      expect(first !== undefined && "text" in first ? first.text : undefined).toBe(
+        "contents of file:///a",
       );
+    });
 
-      await buildServer().start();
-      const execute = captureExecute("use_tool");
+    it("resources/subscribe and resources/unsubscribe route by URI to the callback", async () => {
+      const { catalog } = makeCatalog();
+      const { callbacks, spies } = buildResourceCallbacks();
+      const { client } = await start({
+        catalog,
+        capabilities: RESOURCE_CAPS,
+        resources: callbacks,
+      });
 
-      const result = await execute({ tool_name: "unknown_tool", tool_input: {} });
+      await client.subscribeResource({ uri: "file:///a" });
+      await client.unsubscribeResource({ uri: "file:///a" });
 
-      expect(fakeCallTool).not.toHaveBeenCalled();
-      expect(fakeCatalog.getToolDetails).toHaveBeenCalledWith("unknown_tool");
-      expect(result).toBe("Unknown tool: unknown_tool");
+      expect(spies.subscribeResource).toHaveBeenCalledWith("file:///a", expect.anything());
+      expect(spies.unsubscribeResource).toHaveBeenCalledWith("file:///a", expect.anything());
+    });
+
+    it("does not register resource handlers when capabilities.resources is undefined", async () => {
+      const { catalog } = makeCatalog();
+      const { callbacks } = buildResourceCallbacks();
+      const { client } = await start({
+        catalog,
+        capabilities: { tools: { listChanged: true } },
+        resources: callbacks,
+      });
+
+      await expect(client.listResources()).rejects.toThrow();
+    });
+
+    it("sendResourceListChanged emits notifications/resources/list_changed to host", async () => {
+      const { catalog } = makeCatalog();
+      const { callbacks } = buildResourceCallbacks();
+      const { client, proxy } = await start({
+        catalog,
+        capabilities: RESOURCE_CAPS,
+        resources: callbacks,
+      });
+
+      const received = vi.fn();
+      client.setNotificationHandler(ResourceListChangedNotificationSchema, received);
+
+      await proxy.sendResourceListChanged();
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(received).toHaveBeenCalled();
+    });
+
+    it("sendResourceUpdated emits notifications/resources/updated with the same URI", async () => {
+      const { catalog } = makeCatalog();
+      const { callbacks } = buildResourceCallbacks();
+      const { client, proxy } = await start({
+        catalog,
+        capabilities: RESOURCE_CAPS,
+        resources: callbacks,
+      });
+
+      const received = vi.fn();
+      client.setNotificationHandler(ResourceUpdatedNotificationSchema, received);
+
+      await proxy.sendResourceUpdated({ uri: "file:///a" });
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(received).toHaveBeenCalled();
+      const notification = received.mock.calls[0]?.[0];
+      expect(notification.params.uri).toBe("file:///a");
+    });
+
+    it("sendToolListChanged emits notifications/tools/list_changed to host", async () => {
+      const { catalog } = makeCatalog();
+      const { client, proxy } = await start({
+        catalog,
+        capabilities: { tools: { listChanged: true } },
+      });
+
+      const received = vi.fn();
+      client.setNotificationHandler(ToolListChangedNotificationSchema, received);
+
+      await proxy.sendToolListChanged();
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(received).toHaveBeenCalled();
+    });
+  });
+
+  describe("prompts", () => {
+    const PROMPT_CAPS: ServerCapabilities = {
+      tools: { listChanged: true },
+      prompts: { listChanged: true },
+    };
+
+    it("prompts/list returns what the callback provides", async () => {
+      const { catalog } = makeCatalog();
+      const listPrompts = vi.fn(() => [{ name: "summarize", description: "Summarize" }]);
+      const getPrompt = vi.fn(async () => ({ messages: [] }));
+      const { client } = await start({
+        catalog,
+        capabilities: PROMPT_CAPS,
+        prompts: { listPrompts, getPrompt },
+      });
+
+      const result = await client.listPrompts();
+      expect(listPrompts).toHaveBeenCalled();
+      expect(result.prompts.map(p => p.name)).toEqual(["summarize"]);
+    });
+
+    it("prompts/get routes by name and arguments to the callback", async () => {
+      const { catalog } = makeCatalog();
+      const listPrompts = vi.fn(() => [{ name: "summarize", description: "Summarize" }]);
+      const getPrompt = vi.fn(async () => ({
+        messages: [{ role: "user" as const, content: { type: "text" as const, text: "ok" } }],
+      }));
+      const { client } = await start({
+        catalog,
+        capabilities: PROMPT_CAPS,
+        prompts: { listPrompts, getPrompt },
+      });
+
+      await client.getPrompt({ name: "summarize", arguments: { topic: "AI" } });
+
+      expect(getPrompt).toHaveBeenCalledWith(
+        "summarize",
+        { topic: "AI" },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+
+    it("sendPromptListChanged emits notifications/prompts/list_changed", async () => {
+      const { catalog } = makeCatalog();
+      const listPrompts = vi.fn(() => []);
+      const getPrompt = vi.fn(async () => ({ messages: [] }));
+      const { client, proxy } = await start({
+        catalog,
+        capabilities: PROMPT_CAPS,
+        prompts: { listPrompts, getPrompt },
+      });
+
+      const received = vi.fn();
+      client.setNotificationHandler(PromptListChangedNotificationSchema, received);
+
+      await proxy.sendPromptListChanged();
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(received).toHaveBeenCalled();
+    });
+  });
+
+  describe("completion", () => {
+    it("completion/complete routes to the registered callback", async () => {
+      const { catalog } = makeCatalog();
+      const complete = vi.fn(async () => ({
+        completion: { values: ["one", "two"], hasMore: false },
+      }));
+      const { client } = await start({
+        catalog,
+        capabilities: { tools: { listChanged: true }, completions: {} },
+        complete,
+      });
+
+      const result = await client.complete({
+        ref: { type: "ref/prompt", name: "summarize" },
+        argument: { name: "topic", value: "A" },
+      });
+
+      expect(complete).toHaveBeenCalled();
+      expect(result.completion.values).toEqual(["one", "two"]);
+    });
+  });
+
+  describe("logging", () => {
+    it("logging/setLevel routes to the registered callback", async () => {
+      const { catalog } = makeCatalog();
+      const setLoggingLevel = vi.fn(async () => {});
+      const { client } = await start({
+        catalog,
+        capabilities: { tools: { listChanged: true }, logging: {} },
+        setLoggingLevel,
+      });
+
+      await client.setLoggingLevel("warning");
+
+      expect(setLoggingLevel).toHaveBeenCalledWith(
+        "warning",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+
+    it("sendLoggingMessage forwards a log message to the host", async () => {
+      const { catalog } = makeCatalog();
+      const { client, proxy } = await start({
+        catalog,
+        capabilities: { tools: { listChanged: true }, logging: {} },
+        setLoggingLevel: async () => {},
+      });
+
+      const received = vi.fn();
+      client.setNotificationHandler(LoggingMessageNotificationSchema, received);
+
+      await proxy.sendLoggingMessage({ level: "info", logger: "test", data: "hello" });
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(received).toHaveBeenCalled();
+      const notification = received.mock.calls[0]?.[0];
+      expect(notification.params.data).toBe("hello");
+    });
+  });
+
+  describe("server-initiated request forwarders", () => {
+    it("forwardCreateMessage throws if buildServer has not been called", async () => {
+      const { catalog } = makeCatalog();
+      const proxy = new ProxyServer({
+        catalog: () => catalog,
+        capabilities: { tools: {} },
+        callTool: async () => ({ content: [] }),
+      });
+      await expect(
+        proxy.forwardCreateMessage(
+          {
+            messages: [],
+            maxTokens: 100,
+          },
+          { signal: new AbortController().signal },
+        ),
+      ).rejects.toThrow(/not built/);
+    });
+
+    it("forwardElicitInput throws if buildServer has not been called", async () => {
+      const { catalog } = makeCatalog();
+      const proxy = new ProxyServer({
+        catalog: () => catalog,
+        capabilities: { tools: {} },
+        callTool: async () => ({ content: [] }),
+      });
+      await expect(
+        proxy.forwardElicitInput(
+          {
+            message: "Need input",
+            requestedSchema: { type: "object", properties: {} },
+          },
+          { signal: new AbortController().signal },
+        ),
+      ).rejects.toThrow(/not built/);
+    });
+
+    it("forwardListRoots throws if buildServer has not been called", async () => {
+      const { catalog } = makeCatalog();
+      const proxy = new ProxyServer({
+        catalog: () => catalog,
+        capabilities: { tools: {} },
+        callTool: async () => ({ content: [] }),
+      });
+      await expect(
+        proxy.forwardListRoots(undefined, { signal: new AbortController().signal }),
+      ).rejects.toThrow(/not built/);
+    });
+  });
+
+  describe("onRootsListChanged", () => {
+    it("invokes the callback when the host sends notifications/roots/list_changed", async () => {
+      const { catalog } = makeCatalog();
+      const onRootsListChanged = vi.fn();
+      const proxy = new ProxyServer({
+        catalog: () => catalog,
+        capabilities: { tools: { listChanged: true } },
+        callTool: async () => ({ content: [] }),
+        onRootsListChanged,
+      });
+      const server = proxy.buildServer();
+
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client(
+        { name: "test-client", version: "0.0.0" },
+        { capabilities: { roots: { listChanged: true } } },
+      );
+      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+      try {
+        await client.sendRootsListChanged();
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(onRootsListChanged).toHaveBeenCalled();
+      } finally {
+        await client.close();
+        await server.close();
+      }
+    });
+  });
+
+  describe("noop methods when not built", () => {
+    it("sendResourceListChanged is a no-op when buildServer has not been called", async () => {
+      const { catalog } = makeCatalog();
+      const proxy = new ProxyServer({
+        catalog: () => catalog,
+        capabilities: { tools: {} },
+        callTool: async () => ({ content: [] }),
+      });
+      await expect(proxy.sendResourceListChanged()).resolves.toBeUndefined();
+    });
+
+    it("sendResourceUpdated is a no-op when buildServer has not been called", async () => {
+      const { catalog } = makeCatalog();
+      const proxy = new ProxyServer({
+        catalog: () => catalog,
+        capabilities: { tools: {} },
+        callTool: async () => ({ content: [] }),
+      });
+      await expect(proxy.sendResourceUpdated({ uri: "file:///x" })).resolves.toBeUndefined();
+    });
+
+    it("sendPromptListChanged is a no-op when buildServer has not been called", async () => {
+      const { catalog } = makeCatalog();
+      const proxy = new ProxyServer({
+        catalog: () => catalog,
+        capabilities: { tools: {} },
+        callTool: async () => ({ content: [] }),
+      });
+      await expect(proxy.sendPromptListChanged()).resolves.toBeUndefined();
+    });
+
+    it("sendToolListChanged is a no-op when buildServer has not been called", async () => {
+      const { catalog } = makeCatalog();
+      const proxy = new ProxyServer({
+        catalog: () => catalog,
+        capabilities: { tools: {} },
+        callTool: async () => ({ content: [] }),
+      });
+      await expect(proxy.sendToolListChanged()).resolves.toBeUndefined();
+    });
+
+    it("sendLoggingMessage is a no-op when buildServer has not been called", async () => {
+      const { catalog } = makeCatalog();
+      const proxy = new ProxyServer({
+        catalog: () => catalog,
+        capabilities: { tools: {} },
+        callTool: async () => ({ content: [] }),
+      });
+      await expect(
+        proxy.sendLoggingMessage({ level: "info", data: "hi" }),
+      ).resolves.toBeUndefined();
     });
   });
 });

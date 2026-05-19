@@ -6,6 +6,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockConnect = vi.fn().mockResolvedValue(undefined);
 const mockListTools = vi.fn().mockResolvedValue([]);
 const mockDisconnect = vi.fn().mockResolvedValue(undefined);
+const mockGetCapabilities = vi.fn().mockReturnValue({ tools: {} });
+const mockListResources = vi.fn().mockResolvedValue([]);
+const mockListResourceTemplates = vi.fn().mockResolvedValue([]);
+const mockReadResource = vi.fn().mockResolvedValue({ contents: [] });
+const mockSubscribeResource = vi.fn().mockResolvedValue(undefined);
+const mockUnsubscribeResource = vi.fn().mockResolvedValue(undefined);
+const mockListPrompts = vi.fn().mockResolvedValue([]);
+const mockGetPrompt = vi.fn().mockResolvedValue({ messages: [] });
+const mockComplete = vi.fn().mockResolvedValue({ completion: { values: [], hasMore: false } });
+const mockSetLoggingLevel = vi.fn().mockResolvedValue(undefined);
+const mockSendRootsListChanged = vi.fn().mockResolvedValue(undefined);
 
 let capturedOnTransportError: ((error: Error) => void) | undefined;
 
@@ -14,6 +25,17 @@ vi.mock("../../src/proxy/upstream-client.js", () => ({
     connect = mockConnect;
     listTools = mockListTools;
     disconnect = mockDisconnect;
+    getCapabilities = mockGetCapabilities;
+    listResources = mockListResources;
+    listResourceTemplates = mockListResourceTemplates;
+    readResource = mockReadResource;
+    subscribeResource = mockSubscribeResource;
+    unsubscribeResource = mockUnsubscribeResource;
+    listPrompts = mockListPrompts;
+    getPrompt = mockGetPrompt;
+    complete = mockComplete;
+    setLoggingLevel = mockSetLoggingLevel;
+    sendRootsListChanged = mockSendRootsListChanged;
 
     constructor(config: { onTransportError?: (error: Error) => void }) {
       capturedOnTransportError = config.onTransportError;
@@ -29,8 +51,33 @@ vi.mock("../../src/proxy/tool-catalog.js", () => ({
 
 const mockProxyServerStart = vi.fn().mockResolvedValue(undefined);
 
+type ProxyServerConfigShape = {
+  catalog: () => unknown;
+  capabilities: { resources?: object; prompts?: object; completions?: object; logging?: object };
+  callTool: (name: string, input: unknown, options?: unknown) => Promise<unknown>;
+  resources?: {
+    listResources: () => unknown;
+    listResourceTemplates: () => unknown;
+    readResource: (uri: string, options?: unknown) => Promise<unknown>;
+    subscribeResource: (uri: string, options?: unknown) => Promise<unknown>;
+    unsubscribeResource: (uri: string, options?: unknown) => Promise<unknown>;
+  };
+  prompts?: {
+    listPrompts: () => unknown;
+    getPrompt: (name: string, args?: unknown, options?: unknown) => Promise<unknown>;
+  };
+  complete?: (params: unknown, options?: unknown) => Promise<unknown>;
+  setLoggingLevel?: (level: string, options?: unknown) => Promise<unknown>;
+  onRootsListChanged?: () => void | Promise<void>;
+};
+
+let capturedProxyConfig: ProxyServerConfigShape | undefined;
+
 vi.mock("../../src/proxy/server.js", () => ({
   ProxyServer: class {
+    constructor(config: ProxyServerConfigShape) {
+      capturedProxyConfig = config;
+    }
     start = mockProxyServerStart;
   },
 }));
@@ -230,6 +277,74 @@ describe("startProxy()", () => {
 
       expect(mockStderrWrite).toHaveBeenCalledWith(expect.stringContaining("disconnect failed"));
       expect(mockProcessExit).toHaveBeenCalledWith(0);
+    });
+  });
+
+  describe("wiring with all capabilities advertised", () => {
+    beforeEach(() => {
+      capturedProxyConfig = undefined;
+      mockGetCapabilities.mockReturnValue({
+        tools: {},
+        resources: { subscribe: true, listChanged: true },
+        prompts: { listChanged: true },
+        completions: {},
+        logging: {},
+      });
+    });
+
+    it("wires resource lambdas that delegate to the orchestrator", async () => {
+      await startProxy("test-server", []);
+
+      expect(capturedProxyConfig?.resources).toBeDefined();
+      // Exercise each lambda — they all delegate to orchestrator methods that go
+      // through the real ResourceRouter, so calls without registered resources throw.
+      expect(capturedProxyConfig?.resources?.listResources()).toEqual([]);
+      expect(capturedProxyConfig?.resources?.listResourceTemplates()).toEqual([]);
+      await expect(capturedProxyConfig?.resources?.readResource("file:///x")).rejects.toThrow();
+    });
+
+    it("wires prompt lambdas that delegate to the orchestrator", async () => {
+      await startProxy("test-server", []);
+
+      expect(capturedProxyConfig?.prompts).toBeDefined();
+      expect(capturedProxyConfig?.prompts?.listPrompts()).toEqual([]);
+      await expect(capturedProxyConfig?.prompts?.getPrompt("ghost")).rejects.toThrow();
+    });
+
+    it("wires the completion lambda", async () => {
+      await startProxy("test-server", []);
+
+      expect(capturedProxyConfig?.complete).toBeDefined();
+      // ref/prompt with no registered prompt -> throws via router
+      await expect(
+        capturedProxyConfig?.complete?.({
+          ref: { type: "ref/prompt", name: "ghost" },
+          argument: { name: "x", value: "y" },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("wires the setLoggingLevel lambda", async () => {
+      await startProxy("test-server", []);
+
+      expect(capturedProxyConfig?.setLoggingLevel).toBeDefined();
+      await capturedProxyConfig?.setLoggingLevel?.("info");
+      expect(mockSetLoggingLevel).toHaveBeenCalledWith("info", undefined);
+    });
+
+    it("wires the onRootsListChanged callback", async () => {
+      await startProxy("test-server", []);
+
+      expect(capturedProxyConfig?.onRootsListChanged).toBeDefined();
+      await capturedProxyConfig?.onRootsListChanged?.();
+      expect(mockSendRootsListChanged).toHaveBeenCalled();
+    });
+
+    it("wires the callTool lambda that delegates to the orchestrator", async () => {
+      await startProxy("test-server", []);
+
+      const config = capturedProxyConfig as ProxyServerConfigShape;
+      expect(typeof config.callTool).toBe("function");
     });
   });
 });
