@@ -22,6 +22,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Set version from release tag
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
+
       - run: npm run typecheck
 
       - run: npm test
