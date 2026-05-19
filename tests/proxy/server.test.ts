@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import {
   LoggingMessageNotificationSchema,
+  ProgressNotificationSchema,
   PromptListChangedNotificationSchema,
   ResourceListChangedNotificationSchema,
   ResourceUpdatedNotificationSchema,
@@ -645,6 +646,68 @@ describe("ProxyServer", () => {
       await expect(
         proxy.sendLoggingMessage({ level: "info", data: "hi" }),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("progress forwarding", () => {
+    it("translates upstream progress events into host notifications with the host's progressToken", async () => {
+      const { catalog } = makeCatalog();
+      // The "upstream" callTool: simulate the SDK Client by invoking options.onprogress
+      // with a sequence of progress events.
+      const callTool: ToolCaller = async (_name, _input, options) => {
+        options?.onprogress?.({ progress: 1, total: 3, message: "first" });
+        options?.onprogress?.({ progress: 3, total: 3, message: "done" });
+        return { content: [{ type: "text", text: "ok" }] };
+      };
+      const { client } = await start({ catalog, callTool });
+
+      const received: Array<{ progressToken: string | number; progress: number }> = [];
+      client.setNotificationHandler(ProgressNotificationSchema, async notification => {
+        received.push({
+          progressToken: notification.params.progressToken,
+          progress: notification.params.progress,
+        });
+      });
+
+      await client.callTool(
+        { name: "use_tool", arguments: { tool_name: "known_tool", tool_input: {} } },
+        undefined,
+        {
+          onprogress: () => {},
+          // The SDK Client auto-assigns a progressToken when onprogress is set; this
+          // is the token the host sees on its side. The proxy re-emits the upstream's
+          // events under that same token.
+        },
+      );
+
+      // Allow microtask queue to drain so the notifications round-trip back.
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(received).toHaveLength(2);
+      expect(received[0]?.progress).toBe(1);
+      expect(received[1]?.progress).toBe(3);
+      // Both notifications use the same host-issued progress token.
+      expect(received[0]?.progressToken).toBe(received[1]?.progressToken);
+    });
+
+    it("does not emit progress notifications when the host did not supply a progressToken", async () => {
+      const { catalog } = makeCatalog();
+      const callTool: ToolCaller = async (_name, _input, options) => {
+        options?.onprogress?.({ progress: 1 });
+        return { content: [] };
+      };
+      const { client } = await start({ catalog, callTool });
+
+      const received = vi.fn();
+      client.setNotificationHandler(ProgressNotificationSchema, received);
+
+      await client.callTool({
+        name: "use_tool",
+        arguments: { tool_name: "known_tool", tool_input: {} },
+      });
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(received).not.toHaveBeenCalled();
     });
   });
 });

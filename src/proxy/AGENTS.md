@@ -68,9 +68,15 @@ Inbound (host → upstream):
 
 The `UpstreamClient` registers request handlers on its SDK `Client` for `sampling/createMessage`, `elicitation/create`, and `roots/list`. Each handler invokes a forwarder on the `Orchestrator`, which calls `ProxyServer.forwardX(params, options)`, which in turn calls the matching method on the SDK `Server` (`createMessage`, `elicitInput`, `listRoots`). The upstream's `extra.signal` is threaded through `options.signal` so cancellation by the upstream cancels the host call.
 
-## Deferred work
+## Progress forwarding
 
-- **Progress token forward-threading.** The spec requires `progressToken` from `_meta` to flow upstream verbatim and `notifications/progress` from upstreams to be forwarded to the host. `ping` is auto-handled by the SDK. Full progress threading was deferred from the initial implementation — it requires either threading `_meta` through the per-call options chain or having each handler extract `request.params._meta?.progressToken`, install an `onprogress` callback on the SDK Client request, and re-emit notifications to the host with the same token. The skeleton is in place (handlers receive `extra` with `_meta`); only the wiring is missing.
+When the host issues a request with a `progressToken` in `_meta`, the proxy forwards every progress notification the upstream emits for that request back to the host under the host's original token. Implementation:
+
+1. Each `ProxyServer` request handler calls `buildCallOptions(request, extra)` to construct the per-call options object.
+2. `buildCallOptions` extracts `request.params._meta?.progressToken`. If present, it wires an `onprogress` callback that re-emits `notifications/progress` to the host via `extra.sendNotification`, preserving the host's token.
+3. The options flow `ProxyCallOptions` → `CallOptions` → `UpstreamCallOptions` → SDK `RequestOptions`. The SDK Client auto-assigns its own progress token for the upstream side and routes upstream-emitted progress events into our `onprogress` callback, which fires the host-side notification.
+
+The proxy never sees or rewrites the upstream's auto-assigned token — translation happens purely at the host boundary. `ping` is handled internally by the SDK.
 
 ## Things worth knowing if you touch this
 
