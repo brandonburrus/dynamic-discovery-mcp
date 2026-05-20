@@ -15,6 +15,8 @@ Large MCPs routinely expose tens to hundreds of tools. When several are active a
 
 The agent workflow: scan the catalog in `discover_tool`'s description to find relevant tools, call `discover_tool` to load the full schema of the one it needs, then call `use_tool` to execute it. Full schemas of tools the agent never needs never enter the context window.
 
+For larger configurations, an optional third tool — **`load_mcp`** — lets the agent defer **whole MCP servers** until needed. Servers declared with a `description` field aren't connected at startup; they appear in a `<mcp_servers>` block in `discover_tool`'s description with their description, and the agent calls `load_mcp` with the server's name to bring it online. See [Dynamic Discovery](#dynamic-discovery).
+
 ## Usage
 
 Requires Node.js >= 20.
@@ -101,6 +103,74 @@ When no `--` command is provided, `dynmcp` looks for a config file in this order
 ### Naming Rules
 
 MCP names (the keys in the config) must match `^[a-z0-9][a-z0-9-]*$`.
+
+## Dynamic Discovery
+
+When at least one entry in the config declares a `description` field, **dynamic discovery** is enabled. The named MCP becomes *lazy* — its connection is deferred until the agent explicitly calls `load_mcp` for it. The same trick that `discover_tool`/`use_tool` apply to tool schemas is now applied to whole servers: agents only pay context cost for servers they decide they need.
+
+When dynamic discovery is on:
+
+- A third meta-tool **`load_mcp`** is exposed to the host.
+- `discover_tool`'s description gains a `<mcp_servers>` block listing every lazy MCP with the description from your config.
+- `<tools>` shows only the catalog of eager (non-lazy) MCPs at startup. As the agent calls `load_mcp`, loaded servers are promoted into `<tools>`.
+
+### Example config
+
+```json
+{
+  "$schema": "https://unpkg.com/dynmcp/schema/mcp-config.json",
+  "mcp": {
+    "filesystem": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    },
+    "chrome-devtools": {
+      "description": "Chrome browser automation and DevTools control. Navigate pages, take screenshots, inspect the DOM, run JavaScript, record performance traces, analyze network requests, read console messages. Use for any task that needs to interact with or debug a live web page.",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"]
+    },
+    "aws-knowledge": {
+      "description": "AWS documentation, code samples, and best-practice guidance. Search and read AWS docs, API references, blog posts, CDK/CloudFormation templates, and regional availability info. Use when the task involves AWS services or infrastructure-as-code.",
+      "transport": "streamable-http",
+      "url": "https://knowledge-mcp.global.api.aws"
+    }
+  }
+}
+```
+
+In this example, `filesystem` connects at startup. `chrome-devtools` and `aws-knowledge` stay lazy — neither child process is spawned and no HTTP connection is opened until the agent calls `load_mcp` with the corresponding name.
+
+### Writing good descriptions
+
+The description is what an agent reads to decide whether to load a server. Write it as if you were briefing a teammate who has never seen the MCP:
+
+- **Lead with the verbs** the MCP enables ("navigate, click, screenshot...").
+- **Mention the domain** ("Jira tickets", "AWS docs", "Chrome browser").
+- **Include a "use when..." clause** describing the kind of task it's appropriate for.
+- Keep it to a few sentences. The agent reads every lazy server's description on every `discover_tool` call.
+
+### `load_mcp`
+
+The `load_mcp` tool takes a single `mcp_name` argument matching a key under `mcp` in your config. On success it returns a structured listing of the now-available tools, resources, resource templates, and prompts, and the host receives `notifications/tools/list_changed` (plus `resources/list_changed` and `prompts/list_changed` when applicable) so `discover_tool`'s description refreshes.
+
+Notable semantics:
+
+- **Idempotent** — calling `load_mcp` for a server that is already loaded (or for an eager server) is a successful no-op returning the current listing.
+- **Permanent** — loaded servers stay loaded for the lifetime of the `dynmcp` process. There is no `unload_mcp`.
+- **Atomic on failure** — if the upstream fails to connect, initialize, or return its catalog, the partial state is torn down; the lazy entry remains in `<mcp_servers>` and the agent can retry.
+- **Retry budget** — after **three** consecutive failed `load_mcp` attempts, the entry is evicted from `<mcp_servers>` entirely. Further calls return "unknown server". This prevents an agent from burning context retrying a permanently broken upstream.
+- **Concurrency** — concurrent `load_mcp` calls for the same name coalesce onto one connection attempt; calls for different names run in parallel.
+
+### Capability caveat
+
+The MCP protocol negotiates capabilities (resources, prompts, completion, logging) **once** during the host `initialize` call. Lazy upstreams aren't connected at that point, so they contribute nothing to the negotiated capability set. Practical implications:
+
+- A lazy MCP's **tools** always work via `load_mcp` → `use_tool` (the `tools` capability is always advertised).
+- A lazy MCP's **resources or prompts** work reliably only if at least one eager MCP in your config also advertises that capability, so the host negotiated to listen for them. The proxy still emits the relevant `*/list_changed` notification on load — but hosts that strictly gate on negotiated capabilities may ignore it.
+
+If you want a lazy MCP's resources and prompts to be reachable, keep at least one eager MCP that advertises the same capability, or simply leave the heavier MCP eager.
 
 ## Environment Variable Interpolation
 
