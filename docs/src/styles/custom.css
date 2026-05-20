@@ -1,0 +1,36 @@
+/*
+ * Custom primary accent color (#364ded — a vivid blue-indigo).
+ *
+ * The starlight-theme-flexoki plugin only ships a fixed set of accent
+ * choices, so we override Starlight's accent CSS variables directly here.
+ * This file is wired up via `customCss` in astro.config.mjs and is loaded
+ * after the plugin's stylesheet, so these values win.
+ *
+ * Variable roles:
+ *   --sl-color-accent-low   — subtle backgrounds, borders
+ *   --sl-color-accent       — primary brand color (buttons, active states)
+ *   --sl-color-accent-high  — high-contrast variant (hover/emphasis)
+ *   --sl-color-text-accent  — link / inline accent text
+ */
+
+/* Dark mode (Starlight's default) */
+:root {
+	--sl-color-accent-low: #0c114a;
+	--sl-color-accent: #4858ed;
+	--sl-color-accent-high: #c4cdf9;
+	--sl-color-text-accent: #7d8df3;
+}
+
+/* Light mode */
+:root[data-theme="light"] {
+	--sl-color-accent-low: #dde1fc;
+	--sl-color-accent: #364ded;
+	--sl-color-accent-high: #1a236f;
+	--sl-color-text-accent: #2a3fd9;
+}
+
+/* Shrink the site logo in the navbar — defaults to nav-height which feels large. */
+header .site-title img {
+	height: 1.5rem;
+	width: auto;
+}

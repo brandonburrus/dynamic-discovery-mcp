@@ -1,0 +1,47 @@
+---
+title: Dynamic Discovery MCP
+description: Context management for MCP enabling dynamic tool discovery
+template: splash
+hero:
+  tagline: Context management for MCP enabling dynamic tool discovery
+  actions:
+    - text: Get Started
+      link: /start/introduction/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/brandonburrus/dynamic-discovery-mcp
+      icon: external
+      variant: minimal
+---
+
+import { Aside, Card, CardGrid } from "@astrojs/starlight/components";
+
+## Why Dynamic Discovery?
+
+Every active MCP injects its full tool catalog into your agent's context window on every request. Wire up a handful of large MCPs and the agent is reading hundreds of tool schemas just to decide which one to use — most of them irrelevant to the task in front of it. That noise costs tokens, slows the agent down, and makes it worse at choosing the right tool.
+
+Dynamic discovery flips the default. Instead of presenting every tool upfront, the agent gets a compact list of what exists and pulls in the full schema of any one tool only when it decides to use it. The same idea applies one level up: whole MCP servers can stay deferred until the agent asks for them.
+
+The agent only pays the context cost of what it actually reaches for.
+
+If this pattern sounds familiar, that's because it's the same mechanism behind agent skills: expose lightweight metadata up front and load the heavy details only when the agent commits to using them.
+
+## Features
+
+<CardGrid>
+	<Card title="On-demand MCP Tools" icon="seti:plan">
+		Agents see a short catalog of every tool's name and one-line summary, and load the full schema only for the tools they decide to use.
+	</Card>
+	<Card title="Lazy Loading" icon="forward-slash">
+		Mark any upstream server as lazy and its connection (including its tools) stay deferred until the agent explicitly opts in.
+	</Card>
+	<Card title="Transparent Proxying" icon="random">
+		Resources, prompts, completion, logging, notifications, cancellation, and progress all pass through unchanged. Only the tool catalog is reshaped.
+	</Card>
+	<Card title="All Transports Supported" icon="seti:todo">
+		Proxy any combination of local stdio MCPs and remote endpoints from a single config file, with environment variable interpolation for secrets.
+	</Card>
+</CardGrid>
+
+[Get started →](/start/introduction/)
