@@ -5,7 +5,7 @@
   "author": "Brandon Burrus <brandon@burrus.io>",
   "license": "MIT",
   "type": "module",
-  "homepage": "https://github.com/brandonburrus/dynamic-discovery-mcp#readme",
+  "homepage": "https://dynamicmcp.tools",
   "keywords": [
     "mcp",
     "model-context-protocol",
@@ -45,12 +45,10 @@
     }
   },
   "files": [
-    "dist",
-    "schema"
+    "dist"
   ],
   "scripts": {
     "generate:schema": "tsx scripts/generate-schema.ts",
-    "prebuild": "tsx scripts/generate-schema.ts",
     "build": "tsup",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { mcpConfigSchema } from "./schema.js";
 
-export const MCP_CONFIG_SCHEMA_ID = "https://unpkg.com/dynmcp/schema/mcp-config.json";
+export const MCP_CONFIG_SCHEMA_ID = "https://dynamicmcp.tools/config.json";
 export const MCP_CONFIG_SCHEMA_DRAFT = "http://json-schema.org/draft-07/schema#";
 
 /**

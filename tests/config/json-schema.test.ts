@@ -6,7 +6,7 @@ describe("generateMcpConfigJsonSchema", () => {
 
   it("produces a valid draft-07 JSON Schema", () => {
     expect(schema.$schema).toBe("http://json-schema.org/draft-07/schema#");
-    expect(schema.$id).toBe("https://unpkg.com/dynmcp/schema/mcp-config.json");
+    expect(schema.$id).toBe("https://dynamicmcp.tools/config.json");
     expect(schema.type).toBe("object");
   });
 

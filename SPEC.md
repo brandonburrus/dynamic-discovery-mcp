@@ -418,7 +418,7 @@ Each entry in `mcp` is a map where the key is the MCP name and the value is its 
 
 ```json
 {
-  "$schema": "https://unpkg.com/dynmcp/schema/mcp-config.json",
+  "$schema": "https://dynamicmcp.tools/config.json",
   "env": "enable",
   "mcp": {
     "chrome-devtools": {

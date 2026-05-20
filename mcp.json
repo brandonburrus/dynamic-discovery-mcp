@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/dynmcp/schema/mcp-config.json",
+  "$schema": "https://dynamicmcp.tools/config.json",
   "mcp": {
     "chrome-devtools": {
       "description": "Chrome browser automation and DevTools control via Puppeteer. Navigate pages, click/fill/hover elements, take screenshots, inspect the DOM, run JavaScript in page context, record performance traces, analyze network requests, read console messages, and capture heap snapshots. Use for any task that needs to interact with, debug, or measure a live web page.",
