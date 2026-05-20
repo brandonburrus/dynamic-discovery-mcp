@@ -172,7 +172,8 @@ describe("end-to-end load_mcp via InMemoryTransport", () => {
       // discover_tool description now lists chrome's tool, not the lazy stub.
       const listTools = await pair.client.listTools();
       const discover = listTools.tools.find(tool => tool.name === "discover_tool");
-      expect(discover?.description).toContain("chrome/browser_navigate");
+      expect(discover?.description).toContain("chrome:");
+      expect(discover?.description).toContain("- browser_navigate:");
       expect(discover?.description).not.toMatch(/chrome:\s+Browser/);
     } finally {
       await pair.close();

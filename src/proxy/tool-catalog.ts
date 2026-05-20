@@ -105,9 +105,11 @@ function buildToolsBlock(groups: Map<string, UpstreamTool[]>): string {
   const sections = sortedMcpNames.map(mcpName => {
     const tools = groups.get(mcpName)!;
     const sortedTools = [...tools].sort((a, b) => a.name.localeCompare(b.name));
-    const toolLines = sortedTools
-      .map(tool => `- ${mcpName}/${tool.name}: ${tool.description}`)
-      .join("\n");
+    // Bullets render bare tool names under the group header (per SPEC.md).
+    // The namespaced form (`<mcp-name>/<tool-name>`) is what callers must pass
+    // to discover_tool / use_tool — the group header on the prior line tells
+    // the agent which prefix to combine with each bullet.
+    const toolLines = sortedTools.map(tool => `- ${tool.name}: ${tool.description}`).join("\n");
     return `${mcpName}:\n${toolLines}`;
   });
 

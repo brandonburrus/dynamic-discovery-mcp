@@ -846,7 +846,8 @@ describe("Orchestrator", () => {
 
       const desc = orchestrator.catalog.discoverToolDescription;
       expect(desc).not.toContain("chrome: Browser");
-      expect(desc).toContain("chrome/chrome_tool");
+      expect(desc).toContain("chrome:");
+      expect(desc).toContain("- chrome_tool:");
     });
 
     it("does not emit resources/list_changed when the loaded MCP has no resources", async () => {

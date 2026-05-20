@@ -97,7 +97,10 @@ describe("ToolCatalog", () => {
 
       expect(catalog.discoverToolDescription).not.toContain("<mcp_servers>");
       expect(catalog.discoverToolDescription).toContain("<tools>");
-      expect(catalog.discoverToolDescription).toContain("chrome/navigate: Go somewhere");
+      // Bullets are bare tool names under a group header; the namespace prefix lives
+      // on the group line above each section.
+      expect(catalog.discoverToolDescription).toContain("chrome:");
+      expect(catalog.discoverToolDescription).toContain("- navigate: Go somewhere");
     });
 
     it("renders both <mcp_servers> and <tools> in mixed mode", () => {
@@ -112,7 +115,8 @@ describe("ToolCatalog", () => {
       expect(catalog.discoverToolDescription).toContain("- chrome: Browser automation");
       expect(catalog.discoverToolDescription).toContain("- jira: Ticket tracking");
       expect(catalog.discoverToolDescription).toContain("<tools>");
-      expect(catalog.discoverToolDescription).toContain("filesystem/read_file");
+      expect(catalog.discoverToolDescription).toContain("filesystem:");
+      expect(catalog.discoverToolDescription).toContain("- read_file:");
     });
 
     it("preserves config-file (insertion) order for the <mcp_servers> block", () => {
@@ -166,7 +170,8 @@ describe("ToolCatalog", () => {
       const lazy = new Map([["jira", "Tickets"]]);
       const catalog = ToolCatalog.fromGroupedWithLazy(groups, lazy);
 
-      expect(catalog.discoverToolDescription).toContain("chrome/browser_navigate");
+      expect(catalog.discoverToolDescription).toContain("chrome:");
+      expect(catalog.discoverToolDescription).toContain("- browser_navigate:");
       expect(catalog.discoverToolDescription).not.toMatch(/chrome:\s+Browser/);
       // jira still listed as lazy.
       expect(catalog.discoverToolDescription).toContain("- jira: Tickets");
