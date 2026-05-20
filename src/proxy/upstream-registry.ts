@@ -51,6 +51,43 @@ export class UpstreamRegistry {
     }
   }
 
+  /**
+   * Connects a single additional upstream. Unlike {@link connectAll}, a failure here
+   * leaves any other connected clients untouched — the caller (typically the
+   * Orchestrator's `loadMcp` pipeline) needs that isolation because other lazy MCPs
+   * may have already been promoted to loaded, or eager MCPs are still healthy.
+   *
+   * Throws if `mcpName` is already in the registry; callers should check beforehand
+   * (the orchestrator handles the idempotency-success case before reaching here).
+   */
+  async connectOne(mcpName: string, config: UpstreamConfig): Promise<UpstreamClient> {
+    if (this.clients.has(mcpName)) {
+      throw new Error(`UpstreamRegistry: "${mcpName}" is already connected`);
+    }
+    const client = new UpstreamClient({
+      name: mcpName,
+      transport: config.transport,
+      onTransportError: config.onTransportError,
+      notifications: config.notifications,
+      serverRequests: config.serverRequests,
+    });
+    await client.connect();
+    this.clients.set(mcpName, client);
+    return client;
+  }
+
+  /**
+   * Disconnects and removes a single upstream. Used by `loadMcp` to roll back a
+   * partially-loaded MCP when a post-connect catalog query fails. No-op if the name
+   * is not present.
+   */
+  async deleteOne(mcpName: string): Promise<void> {
+    const client = this.clients.get(mcpName);
+    if (client === undefined) return;
+    this.clients.delete(mcpName);
+    await client.disconnect();
+  }
+
   get(mcpName: string): UpstreamClient | undefined {
     return this.clients.get(mcpName);
   }

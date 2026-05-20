@@ -91,7 +91,7 @@ describe("Orchestrator", () => {
         () =>
           new Orchestrator({
             namespaced: false,
-            mcps: new Map([
+            eagerMcps: new Map([
               ["a", { transport: createMockTransport() }],
               ["b", { transport: createMockTransport() }],
             ]),
@@ -104,7 +104,7 @@ describe("Orchestrator", () => {
         () =>
           new Orchestrator({
             namespaced: false,
-            mcps: new Map(),
+            eagerMcps: new Map(),
           }),
       ).toThrow("Single-MCP (non-namespaced) mode requires exactly one upstream");
     });
@@ -114,7 +114,7 @@ describe("Orchestrator", () => {
         () =>
           new Orchestrator({
             namespaced: true,
-            mcps: new Map(),
+            eagerMcps: new Map(),
           }),
       ).not.toThrow();
     });
@@ -127,7 +127,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["fs", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["fs", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -139,7 +139,7 @@ describe("Orchestrator", () => {
     it("catalog getter throws before connect", () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["fs", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["fs", { transport: createMockTransport() }]]),
       });
       expect(() => orchestrator.catalog).toThrow("Orchestrator is not connected");
     });
@@ -147,7 +147,7 @@ describe("Orchestrator", () => {
     it("capabilities getter throws before connect", () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["fs", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["fs", { transport: createMockTransport() }]]),
       });
       expect(() => orchestrator.capabilities).toThrow("Orchestrator is not connected");
     });
@@ -157,7 +157,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["server", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["server", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -170,7 +170,7 @@ describe("Orchestrator", () => {
     it("callTool throws for invalid format (no /)", async () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["server", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["server", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -182,7 +182,7 @@ describe("Orchestrator", () => {
     it("callTool throws for unknown MCP name", async () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["server", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["server", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -192,7 +192,7 @@ describe("Orchestrator", () => {
     it("disconnectAll disconnects all clients", async () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([
+        eagerMcps: new Map([
           ["a", { transport: createMockTransport() }],
           ["b", { transport: createMockTransport() }],
         ]),
@@ -214,7 +214,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: false,
-        mcps: new Map([["__default__", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["__default__", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -228,7 +228,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: false,
-        mcps: new Map([["__default__", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["__default__", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -249,7 +249,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: false,
-        mcps: new Map([["__default__", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["__default__", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -265,7 +265,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["fs", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["fs", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -282,7 +282,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["fs", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["fs", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -296,7 +296,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["fs", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["fs", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -312,7 +312,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["fs", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["fs", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -324,7 +324,7 @@ describe("Orchestrator", () => {
     it("readResource throws on unknown URI", async () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["fs", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["fs", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -339,7 +339,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["fs", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["fs", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -353,7 +353,7 @@ describe("Orchestrator", () => {
     it("listResources throws before connect", () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["fs", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["fs", { transport: createMockTransport() }]]),
       });
       expect(() => orchestrator.listResources()).toThrow(/not connected/);
     });
@@ -366,7 +366,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["p", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["p", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -382,7 +382,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["p", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["p", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -394,7 +394,7 @@ describe("Orchestrator", () => {
     it("getPrompt throws on unknown prompt", async () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["p", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["p", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -409,7 +409,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["p", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["p", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -427,7 +427,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["r", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["r", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -442,7 +442,7 @@ describe("Orchestrator", () => {
     it("throws on an unsupported ref type", async () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["p", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["p", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -463,7 +463,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["a", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["a", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -478,7 +478,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["a", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["a", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -494,7 +494,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["a", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["a", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -507,7 +507,7 @@ describe("Orchestrator", () => {
     it("calls sendRootsListChanged on every connected upstream", async () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([
+        eagerMcps: new Map([
           ["a", { transport: createMockTransport() }],
           ["b", { transport: createMockTransport() }],
         ]),
@@ -525,7 +525,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["a", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["a", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -540,7 +540,7 @@ describe("Orchestrator", () => {
     it("onCreateMessage handler invokes the registered forwarder", async () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["a", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["a", { transport: createMockTransport() }]]),
       });
       const onCreateMessage = vi.fn().mockResolvedValue({
         content: { type: "text", text: "" },
@@ -561,7 +561,7 @@ describe("Orchestrator", () => {
     it("onCreateMessage throws when no forwarder is registered", async () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["a", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["a", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -576,7 +576,7 @@ describe("Orchestrator", () => {
     it("onElicitInput handler invokes the registered forwarder", async () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["a", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["a", { transport: createMockTransport() }]]),
       });
       const onElicitInput = vi.fn().mockResolvedValue({ action: "accept", content: {} });
       orchestrator.setServerRequestForwarders({ onElicitInput });
@@ -593,7 +593,7 @@ describe("Orchestrator", () => {
     it("onElicitInput throws when no forwarder is registered", async () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["a", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["a", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -608,7 +608,7 @@ describe("Orchestrator", () => {
     it("onListRoots handler invokes the registered forwarder", async () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["a", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["a", { transport: createMockTransport() }]]),
       });
       const onListRoots = vi.fn().mockResolvedValue({ roots: [] });
       orchestrator.setServerRequestForwarders({ onListRoots });
@@ -624,7 +624,7 @@ describe("Orchestrator", () => {
     it("onListRoots throws when no forwarder is registered", async () => {
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([["a", { transport: createMockTransport() }]]),
+        eagerMcps: new Map([["a", { transport: createMockTransport() }]]),
       });
       await orchestrator.connect();
 
@@ -646,7 +646,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([
+        eagerMcps: new Map([
           ["first", { transport: createMockTransport() }],
           ["second", { transport: createMockTransport() }],
         ]),
@@ -665,7 +665,7 @@ describe("Orchestrator", () => {
 
       const orchestrator = new Orchestrator({
         namespaced: true,
-        mcps: new Map([
+        eagerMcps: new Map([
           ["first", { transport: createMockTransport() }],
           ["second", { transport: createMockTransport() }],
         ]),
@@ -673,6 +673,327 @@ describe("Orchestrator", () => {
       await orchestrator.connect();
 
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("prompt name collision"));
+    });
+  });
+
+  describe("dynamic discovery (load_mcp)", () => {
+    it("hasDynamicDiscovery is false when there are no lazy entries", () => {
+      const orchestrator = new Orchestrator({
+        namespaced: true,
+        eagerMcps: new Map([["a", { transport: createMockTransport() }]]),
+      });
+      expect(orchestrator.hasDynamicDiscovery).toBe(false);
+    });
+
+    it("hasDynamicDiscovery is true whenever any lazy entry is configured", () => {
+      const orchestrator = new Orchestrator({
+        namespaced: true,
+        eagerMcps: new Map([["a", { transport: createMockTransport() }]]),
+        lazyMcps: new Map([
+          ["chrome", { transport: createMockTransport(), description: "Browser" }],
+        ]),
+      });
+      expect(orchestrator.hasDynamicDiscovery).toBe(true);
+    });
+
+    it("rejects lazy entries in single-MCP (non-namespaced) mode", () => {
+      expect(
+        () =>
+          new Orchestrator({
+            namespaced: false,
+            eagerMcps: new Map([["only", { transport: createMockTransport() }]]),
+            lazyMcps: new Map([
+              ["chrome", { transport: createMockTransport(), description: "Browser" }],
+            ]),
+          }),
+      ).toThrow(/Single-MCP .* does not support lazy upstreams/);
+    });
+
+    it("does not connect lazy upstreams during connect()", async () => {
+      const orchestrator = new Orchestrator({
+        namespaced: true,
+        eagerMcps: new Map([["eager", { transport: createMockTransport() }]]),
+        lazyMcps: new Map([
+          ["lazy", { transport: createMockTransport(), description: "Lazy MCP" }],
+        ]),
+      });
+      await orchestrator.connect();
+
+      // Only the eager upstream's connect was called — the lazy entry is still deferred.
+      expect(mockConnect).toHaveBeenCalledOnce();
+    });
+
+    it("includes lazy descriptions in the discover_tool description until loaded", async () => {
+      const orchestrator = new Orchestrator({
+        namespaced: true,
+        eagerMcps: new Map([["eager", { transport: createMockTransport() }]]),
+        lazyMcps: new Map([
+          ["chrome", { transport: createMockTransport(), description: "Browser MCP" }],
+        ]),
+      });
+      await orchestrator.connect();
+
+      expect(orchestrator.catalog.discoverToolDescription).toContain("<mcp_servers>");
+      expect(orchestrator.catalog.discoverToolDescription).toContain("chrome: Browser MCP");
+    });
+
+    it("throws when load_mcp is called with an unknown name and lists lazy alternatives", async () => {
+      const orchestrator = new Orchestrator({
+        namespaced: true,
+        eagerMcps: new Map([["eager", { transport: createMockTransport() }]]),
+        lazyMcps: new Map([
+          ["chrome", { transport: createMockTransport(), description: "Browser" }],
+        ]),
+      });
+      await orchestrator.connect();
+
+      await expect(orchestrator.loadMcp("ghost")).rejects.toThrow(
+        /Unknown MCP server: "ghost".*chrome/,
+      );
+    });
+
+    it("returns a no-op success listing for an eager MCP without firing notifications", async () => {
+      mockListTools.mockResolvedValueOnce([
+        { name: "tool_a", description: "T", inputSchema: {} },
+      ] as UpstreamTool[]);
+      const orchestrator = new Orchestrator({
+        namespaced: true,
+        eagerMcps: new Map([["eager", { transport: createMockTransport() }]]),
+        lazyMcps: new Map([
+          ["chrome", { transport: createMockTransport(), description: "Browser" }],
+        ]),
+      });
+      await orchestrator.connect();
+
+      const onToolsListChanged = vi.fn();
+      orchestrator.setNotificationHandlers({ onToolsListChanged });
+
+      const result = await orchestrator.loadMcp("eager");
+
+      expect(result.mcp_name).toBe("eager");
+      expect(result.tools).toEqual([{ name: "eager/tool_a", description: "T" }]);
+      // Idempotent path — no upstream traffic, no host notification.
+      expect(onToolsListChanged).not.toHaveBeenCalled();
+    });
+
+    it("connects a lazy MCP on load and returns its tools/resources/prompts", async () => {
+      // Build sequenced mock responses: eager first (during connect), then lazy.
+      mockListTools.mockReset();
+      mockListTools
+        .mockResolvedValueOnce([{ name: "eager_tool", description: "E", inputSchema: {} }])
+        .mockResolvedValueOnce([{ name: "chrome_tool", description: "C", inputSchema: {} }]);
+      mockGetCapabilities
+        .mockReturnValueOnce({ tools: {} })
+        .mockReturnValueOnce({ tools: {}, resources: {}, prompts: {} });
+      mockListResources.mockResolvedValueOnce([{ uri: "chrome://tab/1", name: "tab" }]);
+      mockListResourceTemplates.mockResolvedValueOnce([]);
+      mockListPrompts.mockResolvedValueOnce([{ name: "explain", description: "Explain" }]);
+
+      const orchestrator = new Orchestrator({
+        namespaced: true,
+        eagerMcps: new Map([["eager", { transport: createMockTransport() }]]),
+        lazyMcps: new Map([
+          ["chrome", { transport: createMockTransport(), description: "Browser MCP" }],
+        ]),
+      });
+      await orchestrator.connect();
+
+      const onToolsListChanged = vi.fn();
+      const onResourcesListChanged = vi.fn();
+      const onPromptsListChanged = vi.fn();
+      orchestrator.setNotificationHandlers({
+        onToolsListChanged,
+        onResourcesListChanged,
+        onPromptsListChanged,
+      });
+
+      const result = await orchestrator.loadMcp("chrome");
+
+      expect(result).toEqual({
+        mcp_name: "chrome",
+        tools: [{ name: "chrome/chrome_tool", description: "C" }],
+        resources: [
+          { uri: "chrome://tab/1", name: "tab", description: undefined, mimeType: undefined },
+        ],
+        resource_templates: [],
+        prompts: [{ name: "explain", description: "Explain", arguments: undefined }],
+      });
+      // tools/list_changed always fires; resources/prompts only when entries exist.
+      expect(onToolsListChanged).toHaveBeenCalledOnce();
+      expect(onResourcesListChanged).toHaveBeenCalledOnce();
+      expect(onPromptsListChanged).toHaveBeenCalledOnce();
+    });
+
+    it("after load, the lazy MCP appears in <tools> and is removed from <mcp_servers>", async () => {
+      mockListTools.mockReset();
+      mockListTools
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ name: "chrome_tool", description: "C", inputSchema: {} }]);
+      mockGetCapabilities.mockReturnValueOnce({ tools: {} }).mockReturnValueOnce({ tools: {} });
+
+      const orchestrator = new Orchestrator({
+        namespaced: true,
+        eagerMcps: new Map([["eager", { transport: createMockTransport() }]]),
+        lazyMcps: new Map([
+          ["chrome", { transport: createMockTransport(), description: "Browser" }],
+        ]),
+      });
+      await orchestrator.connect();
+
+      expect(orchestrator.catalog.discoverToolDescription).toContain("chrome: Browser");
+
+      await orchestrator.loadMcp("chrome");
+
+      const desc = orchestrator.catalog.discoverToolDescription;
+      expect(desc).not.toContain("chrome: Browser");
+      expect(desc).toContain("chrome/chrome_tool");
+    });
+
+    it("does not emit resources/list_changed when the loaded MCP has no resources", async () => {
+      mockListTools.mockReset();
+      mockListTools
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ name: "t", description: "", inputSchema: {} }]);
+      mockGetCapabilities
+        .mockReturnValueOnce({ tools: {} })
+        .mockReturnValueOnce({ tools: {}, resources: {} });
+      mockListResources.mockResolvedValueOnce([]);
+      mockListResourceTemplates.mockResolvedValueOnce([]);
+
+      const orchestrator = new Orchestrator({
+        namespaced: true,
+        eagerMcps: new Map([["eager", { transport: createMockTransport() }]]),
+        lazyMcps: new Map([
+          ["chrome", { transport: createMockTransport(), description: "Browser" }],
+        ]),
+      });
+      await orchestrator.connect();
+
+      const onResourcesListChanged = vi.fn();
+      orchestrator.setNotificationHandlers({ onResourcesListChanged });
+
+      await orchestrator.loadMcp("chrome");
+
+      // No resources contributed → no list_changed even though the cap is advertised.
+      expect(onResourcesListChanged).not.toHaveBeenCalled();
+    });
+
+    it("evicts the lazy entry after MAX_LOAD_ATTEMPTS consecutive failures", async () => {
+      mockListTools.mockReset();
+      // First (eager) call succeeds; subsequent lazy attempts all fail.
+      mockListTools
+        .mockResolvedValueOnce([])
+        .mockRejectedValueOnce(new Error("boom 1"))
+        .mockRejectedValueOnce(new Error("boom 2"))
+        .mockRejectedValueOnce(new Error("boom 3"));
+      mockGetCapabilities.mockReturnValue({ tools: {} });
+
+      const orchestrator = new Orchestrator({
+        namespaced: true,
+        eagerMcps: new Map([["eager", { transport: createMockTransport() }]]),
+        lazyMcps: new Map([
+          ["chrome", { transport: createMockTransport(), description: "Browser" }],
+        ]),
+      });
+      await orchestrator.connect();
+
+      const onToolsListChanged = vi.fn();
+      orchestrator.setNotificationHandlers({ onToolsListChanged });
+
+      // First two failures: lazy entry retained; no eviction notification.
+      await expect(orchestrator.loadMcp("chrome")).rejects.toThrow("boom 1");
+      expect(orchestrator.catalog.discoverToolDescription).toContain("chrome: Browser");
+      await expect(orchestrator.loadMcp("chrome")).rejects.toThrow("boom 2");
+      expect(orchestrator.catalog.discoverToolDescription).toContain("chrome: Browser");
+      expect(onToolsListChanged).not.toHaveBeenCalled();
+
+      // Third failure trips the retry budget — entry evicted, list_changed fires.
+      await expect(orchestrator.loadMcp("chrome")).rejects.toThrow(
+        /after 3 attempts.*no longer be offered/i,
+      );
+      expect(orchestrator.catalog.discoverToolDescription).not.toContain("chrome: Browser");
+      expect(onToolsListChanged).toHaveBeenCalledOnce();
+
+      // Fourth call now returns "unknown server" since the entry is gone.
+      await expect(orchestrator.loadMcp("chrome")).rejects.toThrow(/Unknown MCP server/);
+    });
+
+    it("rolls back on listTools failure: lazy entry persists, MCP not in registry", async () => {
+      mockListTools.mockReset();
+      mockListTools
+        .mockResolvedValueOnce([]) // eager
+        .mockRejectedValueOnce(new Error("upstream exploded")); // lazy load
+
+      const orchestrator = new Orchestrator({
+        namespaced: true,
+        eagerMcps: new Map([["eager", { transport: createMockTransport() }]]),
+        lazyMcps: new Map([
+          ["chrome", { transport: createMockTransport(), description: "Browser" }],
+        ]),
+      });
+      await orchestrator.connect();
+
+      const onToolsListChanged = vi.fn();
+      orchestrator.setNotificationHandlers({ onToolsListChanged });
+
+      await expect(orchestrator.loadMcp("chrome")).rejects.toThrow("upstream exploded");
+
+      // The lazy MCP is still listed for discovery — retryable. No notification fired.
+      expect(orchestrator.catalog.discoverToolDescription).toContain("chrome: Browser");
+      expect(onToolsListChanged).not.toHaveBeenCalled();
+    });
+
+    it("coalesces concurrent loads of the same MCP onto a single connection attempt", async () => {
+      mockListTools.mockReset();
+      mockListTools.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      mockGetCapabilities.mockReturnValue({ tools: {} });
+
+      const orchestrator = new Orchestrator({
+        namespaced: true,
+        eagerMcps: new Map([["eager", { transport: createMockTransport() }]]),
+        lazyMcps: new Map([
+          ["chrome", { transport: createMockTransport(), description: "Browser" }],
+        ]),
+      });
+      await orchestrator.connect();
+
+      const connectCallsBefore = mockConnect.mock.calls.length;
+      const [a, b] = await Promise.all([
+        orchestrator.loadMcp("chrome"),
+        orchestrator.loadMcp("chrome"),
+      ]);
+
+      // Both calls resolve to the same listing.
+      expect(a).toEqual(b);
+      // Exactly one additional connect happened — the second call coalesced.
+      expect(mockConnect.mock.calls.length - connectCallsBefore).toBe(1);
+    });
+
+    it("subsequent load_mcp call on an already-loaded lazy MCP is a no-op success", async () => {
+      mockListTools.mockReset();
+      mockListTools
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ name: "t", description: "", inputSchema: {} }]);
+      mockGetCapabilities.mockReturnValue({ tools: {} });
+
+      const orchestrator = new Orchestrator({
+        namespaced: true,
+        eagerMcps: new Map([["eager", { transport: createMockTransport() }]]),
+        lazyMcps: new Map([
+          ["chrome", { transport: createMockTransport(), description: "Browser" }],
+        ]),
+      });
+      await orchestrator.connect();
+
+      const first = await orchestrator.loadMcp("chrome");
+
+      const onToolsListChanged = vi.fn();
+      orchestrator.setNotificationHandlers({ onToolsListChanged });
+      const second = await orchestrator.loadMcp("chrome");
+
+      expect(second).toEqual(first);
+      // Second call did not retrigger a host notification.
+      expect(onToolsListChanged).not.toHaveBeenCalled();
     });
   });
 });

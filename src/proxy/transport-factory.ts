@@ -8,18 +8,24 @@ interface StdioTransportConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  // Tolerated but unused by the factory. Present so a Zod-validated config entry can be
+  // forwarded here without an intermediate destructure; the field is consumed by the
+  // orchestrator's lazy-loading logic, not by transport construction.
+  description?: string;
 }
 
 interface StreamableHttpTransportConfig {
   transport: "streamable-http";
   url: string;
   headers?: Record<string, string>;
+  description?: string;
 }
 
 interface SseTransportConfig {
   transport: "sse";
   url: string;
   headers?: Record<string, string>;
+  description?: string;
 }
 
 export type McpTransportConfig =

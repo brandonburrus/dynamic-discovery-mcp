@@ -2,11 +2,13 @@
   "$schema": "https://unpkg.com/dynmcp/schema/mcp-config.json",
   "mcp": {
     "chrome-devtools": {
+      "description": "Chrome browser automation and DevTools control via Puppeteer. Navigate pages, click/fill/hover elements, take screenshots, inspect the DOM, run JavaScript in page context, record performance traces, analyze network requests, read console messages, and capture heap snapshots. Use for any task that needs to interact with, debug, or measure a live web page.",
       "transport": "stdio",
       "command": "npx",
       "args": ["-y", "chrome-devtools-mcp@latest"]
     },
     "aws-knowledge": {
+      "description": "AWS documentation, code samples, and best-practice guidance. Search and retrieve content from AWS docs, API references, What's New posts, architectural guidance, Well-Architected guidance, troubleshooting guides, CDK and CloudFormation templates, AWS Amplify docs, and the Strands Agents SDK docs. Also looks up regional availability of AWS services, APIs, and CloudFormation resources. Use when the task involves AWS services, infrastructure-as-code, or AWS application development.",
       "transport": "streamable-http",
       "url": "https://knowledge-mcp.global.api.aws"
     }

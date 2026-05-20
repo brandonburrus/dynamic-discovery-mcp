@@ -1,8 +1,7 @@
 import process from "node:process";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { loadConfig } from "../config/index.js";
-import { Orchestrator } from "./orchestrator.js";
+import { type EagerMcpConfig, type LazyMcpConfig, Orchestrator } from "./orchestrator.js";
 import { ProxyServer } from "./server.js";
 import { createTransport } from "./transport-factory.js";
 
@@ -10,10 +9,10 @@ const SINGLE_MCP_NAME = "__default__";
 
 export async function startProxy(command: string, args: string[]): Promise<void> {
   const transport = new StdioClientTransport({ command, args });
-  const mcps = new Map<string, { transport: Transport }>([[SINGLE_MCP_NAME, { transport }]]);
+  const eagerMcps = new Map<string, EagerMcpConfig>([[SINGLE_MCP_NAME, { transport }]]);
 
   const orchestrator = buildOrchestrator({
-    mcps,
+    eagerMcps,
     namespaced: false,
     transportErrorPrefix: () => "Upstream MCP",
   });
@@ -31,13 +30,23 @@ export async function startProxyFromConfig(
 ): Promise<void> {
   const config = loadConfig(options);
 
-  const mcps = new Map<string, { transport: Transport }>();
+  // Partition by `description` presence: entries with a description become lazy
+  // upstreams (deferred connection, dynamic discovery enabled); the rest are eager.
+  // Order within each partition preserves config-file order.
+  const eagerMcps = new Map<string, EagerMcpConfig>();
+  const lazyMcps = new Map<string, LazyMcpConfig>();
   for (const [name, entry] of Object.entries(config.mcp)) {
-    mcps.set(name, { transport: createTransport(entry) });
+    const transport = createTransport(entry);
+    if (entry.description !== undefined) {
+      lazyMcps.set(name, { transport, description: entry.description });
+    } else {
+      eagerMcps.set(name, { transport });
+    }
   }
 
   const orchestrator = buildOrchestrator({
-    mcps,
+    eagerMcps,
+    lazyMcps,
     namespaced: true,
     transportErrorPrefix: mcpName => `Upstream MCP "${mcpName}"`,
   });
@@ -46,7 +55,8 @@ export async function startProxyFromConfig(
 }
 
 type BuildOrchestratorParams = {
-  mcps: Map<string, { transport: Transport }>;
+  eagerMcps: Map<string, EagerMcpConfig>;
+  lazyMcps?: Map<string, LazyMcpConfig>;
   namespaced: boolean;
   transportErrorPrefix: (mcpName: string) => string;
 };
@@ -60,7 +70,8 @@ const activeShutdown: ShutdownHolder = { shutdown: null };
 
 function buildOrchestrator(params: BuildOrchestratorParams): Orchestrator {
   return new Orchestrator({
-    mcps: params.mcps,
+    eagerMcps: params.eagerMcps,
+    lazyMcps: params.lazyMcps,
     namespaced: params.namespaced,
     onTransportError: (mcpName: string, error: Error) => {
       process.stderr.write(
@@ -128,6 +139,11 @@ async function runProxy(orchestrator: Orchestrator): Promise<void> {
         ? (level, options) => orchestrator.setLoggingLevel(level, options)
         : undefined,
     onRootsListChanged: () => orchestrator.broadcastRootsListChanged(),
+    // Only register the `load_mcp` meta-tool when dynamic discovery is enabled —
+    // i.e. when the config declared at least one lazy upstream MCP.
+    loadMcp: orchestrator.hasDynamicDiscovery
+      ? mcpName => orchestrator.loadMcp(mcpName)
+      : undefined,
   });
 
   orchestrator.setNotificationHandlers({

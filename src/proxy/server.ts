@@ -93,6 +93,13 @@ export type LoggingSetLevelCallback = (
   options?: ProxyCallOptions,
 ) => Promise<void>;
 
+/**
+ * Result returned by {@link LoadMcpCallback}. Kept loose (a plain JSON value) here so
+ * the ProxyServer does not depend on the orchestrator's `LoadMcpResult` type — the
+ * server just serializes whatever the orchestrator returns into the tool response.
+ */
+export type LoadMcpCallback = (mcpName: string) => Promise<unknown>;
+
 export type LogMessageParams = LoggingMessageNotification["params"];
 
 type ProxyServerConfig = {
@@ -135,13 +142,24 @@ type ProxyServerConfig = {
    * declared the `roots` client capability to us.
    */
   onRootsListChanged?: () => void | Promise<void>;
+  /**
+   * Optional dynamic-discovery callback. When provided, the `load_mcp` meta-tool is
+   * registered alongside `discover_tool` and `use_tool`. Absent in single-MCP mode
+   * and in config-file mode with no `description` fields. See SPEC.md § "Dynamic
+   * Discovery" and § "Tools > load_mcp".
+   */
+  loadMcp?: LoadMcpCallback;
 };
 
 const DISCOVER_TOOL_NAME = "discover_tool";
 const USE_TOOL_NAME = "use_tool";
+const LOAD_MCP_NAME = "load_mcp";
 
 const USE_TOOL_DESCRIPTION =
   "Use a tool that was previously discovered with the discover_tool tool.";
+
+const LOAD_MCP_DESCRIPTION =
+  "Load a previously-deferred MCP server so that its tools, resources, and prompts become available. Pass the server name as shown in the <mcp_servers> block of the discover_tool description. Loading is permanent for the remainder of this session.";
 
 const DISCOVER_TOOL_INPUT_SCHEMA = {
   type: "object" as const,
@@ -160,11 +178,20 @@ const USE_TOOL_INPUT_SCHEMA = {
   required: ["tool_name"],
 };
 
+const LOAD_MCP_INPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    mcp_name: { type: "string" as const },
+  },
+  required: ["mcp_name"],
+};
+
 const DiscoverToolArgsSchema = z.object({ tool_name: z.string() });
 const UseToolArgsSchema = z.object({
   tool_name: z.string(),
   tool_input: z.record(z.string(), z.unknown()).default({}),
 });
+const LoadMcpArgsSchema = z.object({ mcp_name: z.string() });
 
 export class ProxyServer {
   private readonly catalog: () => ToolCatalog;
@@ -175,6 +202,7 @@ export class ProxyServer {
   private readonly complete: CompletionCallback | undefined;
   private readonly setLoggingLevelCallback: LoggingSetLevelCallback | undefined;
   private readonly onRootsListChangedCallback: (() => void | Promise<void>) | undefined;
+  private readonly loadMcpCallback: LoadMcpCallback | undefined;
   private sdkServer: Server | null = null;
 
   constructor({
@@ -186,6 +214,7 @@ export class ProxyServer {
     complete,
     setLoggingLevel,
     onRootsListChanged,
+    loadMcp,
   }: ProxyServerConfig) {
     this.catalog = catalog;
     this.callTool = callTool;
@@ -195,6 +224,7 @@ export class ProxyServer {
     this.complete = complete;
     this.setLoggingLevelCallback = setLoggingLevel;
     this.onRootsListChangedCallback = onRootsListChanged;
+    this.loadMcpCallback = loadMcp;
   }
 
   buildServer(): Server {
@@ -359,8 +389,13 @@ export class ProxyServer {
   }
 
   private registerToolHandlers(server: Server): void {
-    server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+      type ListedTool = {
+        name: string;
+        description: string;
+        inputSchema: { type: "object"; properties: Record<string, unknown>; required: string[] };
+      };
+      const tools: ListedTool[] = [
         {
           name: DISCOVER_TOOL_NAME,
           description: this.catalog().discoverToolDescription,
@@ -371,8 +406,16 @@ export class ProxyServer {
           description: USE_TOOL_DESCRIPTION,
           inputSchema: USE_TOOL_INPUT_SCHEMA,
         },
-      ],
-    }));
+      ];
+      if (this.loadMcpCallback !== undefined) {
+        tools.push({
+          name: LOAD_MCP_NAME,
+          description: LOAD_MCP_DESCRIPTION,
+          inputSchema: LOAD_MCP_INPUT_SCHEMA,
+        });
+      }
+      return { tools };
+    });
 
     server.setRequestHandler(
       CallToolRequestSchema,
@@ -399,6 +442,26 @@ export class ProxyServer {
             args.tool_input,
             this.buildCallOptions(request, extra),
           );
+        }
+
+        if (name === LOAD_MCP_NAME && this.loadMcpCallback !== undefined) {
+          const args = LoadMcpArgsSchema.parse(rawArgs ?? {});
+          try {
+            const result = await this.loadMcpCallback(args.mcp_name);
+            return {
+              // The structured payload is JSON-serialized into a text block. We also
+              // populate `structuredContent` so MCP clients that prefer typed data can
+              // consume the same response without parsing the text body.
+              content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+              structuredContent: result as Record<string, unknown>,
+            };
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            return {
+              isError: true,
+              content: [{ type: "text", text: message }],
+            };
+          }
         }
 
         return {

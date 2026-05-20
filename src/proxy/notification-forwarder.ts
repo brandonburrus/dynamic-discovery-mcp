@@ -1,7 +1,6 @@
 import type { Prompt, Resource, ResourceTemplate } from "@modelcontextprotocol/sdk/types.js";
 import type { PromptRouter } from "./prompt-router.js";
 import type { ResourceRouter } from "./resource-router.js";
-import { ToolCatalog } from "./tool-catalog.js";
 import type { LogMessageParams, UpstreamTool } from "./upstream-client.js";
 import type { UpstreamRegistry } from "./upstream-registry.js";
 
@@ -39,7 +38,13 @@ export class NotificationForwarder {
     private readonly resourceRouter: () => ResourceRouter | null,
     private readonly promptRouter: () => PromptRouter | null,
     private readonly toolsByMcp: Map<string, UpstreamTool[]>,
-    private readonly setToolCatalog: (catalog: ToolCatalog) => void,
+    /**
+     * Asks the orchestrator to rebuild the tool catalog from current state
+     * (`toolsByMcp` plus, when dynamic discovery is enabled, the lazy registry's
+     * descriptions). The forwarder doesn't own that composition itself so this stays
+     * a single seam.
+     */
+    private readonly rebuildToolCatalog: () => void,
     private readonly namespaced: boolean,
   ) {}
 
@@ -53,11 +58,7 @@ export class NotificationForwarder {
 
     const tools = await client.listTools().catch(() => [] as UpstreamTool[]);
     this.toolsByMcp.set(mcpName, tools);
-
-    const rebuilt = this.namespaced
-      ? ToolCatalog.fromGrouped(this.toolsByMcp)
-      : ToolCatalog.fromFlat([...this.toolsByMcp.values()][0] ?? []);
-    this.setToolCatalog(rebuilt);
+    this.rebuildToolCatalog();
 
     await this.hostHandlers.onToolsListChanged?.();
   }
@@ -79,6 +80,25 @@ export class NotificationForwarder {
 
   async handleResourceUpdated(params: { uri: string }): Promise<void> {
     await this.hostHandlers.onResourceUpdated?.(params);
+  }
+
+  /**
+   * Fire-only emitters. Unlike `handleXListChanged`, these do not re-fetch the
+   * affected data from any upstream — the caller has already populated the relevant
+   * state directly. Used by the orchestrator's load_mcp pipeline, which already has
+   * the freshly-queried tools/resources/prompts in hand and just needs to nudge the
+   * host to refetch.
+   */
+  async notifyToolsListChanged(): Promise<void> {
+    await this.hostHandlers.onToolsListChanged?.();
+  }
+
+  async notifyResourcesListChanged(): Promise<void> {
+    await this.hostHandlers.onResourcesListChanged?.();
+  }
+
+  async notifyPromptsListChanged(): Promise<void> {
+    await this.hostHandlers.onPromptsListChanged?.();
   }
 
   async handlePromptsListChanged(mcpName: string): Promise<void> {

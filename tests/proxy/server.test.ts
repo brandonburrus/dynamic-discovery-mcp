@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolCatalog } from "../../src/proxy/tool-catalog.js";
 import {
   type CompletionCallback,
+  type LoadMcpCallback,
   type LoggingSetLevelCallback,
   type PromptCallbacks,
   ProxyServer,
@@ -61,6 +62,7 @@ type StartOpts = {
   complete?: CompletionCallback;
   setLoggingLevel?: LoggingSetLevelCallback;
   onRootsListChanged?: () => void | Promise<void>;
+  loadMcp?: LoadMcpCallback;
 };
 
 async function startPair(opts: StartOpts): Promise<Pair> {
@@ -75,6 +77,7 @@ async function startPair(opts: StartOpts): Promise<Pair> {
     complete: opts.complete,
     setLoggingLevel: opts.setLoggingLevel,
     onRootsListChanged: opts.onRootsListChanged,
+    loadMcp: opts.loadMcp,
   });
   const server = proxy.buildServer();
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -140,6 +143,83 @@ describe("ProxyServer", () => {
 
       expect(useTool?.description).toBe(
         "Use a tool that was previously discovered with the discover_tool tool.",
+      );
+    });
+
+    it("does NOT advertise load_mcp when no loadMcp callback is provided", async () => {
+      const { catalog } = makeCatalog();
+      const { client } = await start({ catalog });
+
+      const result = await client.listTools();
+      const names = result.tools.map(tool => tool.name);
+
+      expect(names).not.toContain("load_mcp");
+    });
+
+    it("advertises load_mcp when the loadMcp callback is provided", async () => {
+      const { catalog } = makeCatalog();
+      const loadMcp = vi.fn().mockResolvedValue({
+        mcp_name: "chrome",
+        tools: [],
+        resources: [],
+        resource_templates: [],
+        prompts: [],
+      });
+      const { client } = await start({ catalog, loadMcp });
+
+      const result = await client.listTools();
+      const loadMcpTool = result.tools.find(tool => tool.name === "load_mcp");
+
+      expect(loadMcpTool).toBeDefined();
+      expect(loadMcpTool?.description).toContain("Load a previously-deferred MCP server");
+      expect(loadMcpTool?.inputSchema).toMatchObject({
+        type: "object",
+        properties: { mcp_name: { type: "string" } },
+        required: ["mcp_name"],
+      });
+    });
+  });
+
+  describe("load_mcp", () => {
+    it("invokes the loadMcp callback with the mcp_name argument", async () => {
+      const { catalog } = makeCatalog();
+      const loadMcp = vi.fn().mockResolvedValue({
+        mcp_name: "chrome",
+        tools: [{ name: "chrome/foo", description: "F" }],
+        resources: [],
+        resource_templates: [],
+        prompts: [],
+      });
+      const { client } = await start({ catalog, loadMcp });
+
+      const result = await client.callTool({
+        name: "load_mcp",
+        arguments: { mcp_name: "chrome" },
+      });
+
+      expect(loadMcp).toHaveBeenCalledWith("chrome");
+      // The structured result is JSON-stringified into text content.
+      const text = (result.content as Array<{ type: string; text: string }>)[0]?.text;
+      const parsed = JSON.parse(text);
+      expect(parsed).toMatchObject({
+        mcp_name: "chrome",
+        tools: [{ name: "chrome/foo", description: "F" }],
+      });
+    });
+
+    it("returns isError=true when the loadMcp callback throws", async () => {
+      const { catalog } = makeCatalog();
+      const loadMcp = vi.fn().mockRejectedValue(new Error("upstream down"));
+      const { client } = await start({ catalog, loadMcp });
+
+      const result = await client.callTool({
+        name: "load_mcp",
+        arguments: { mcp_name: "broken" },
+      });
+
+      expect(result.isError).toBe(true);
+      expect((result.content as Array<{ type: string; text: string }>)[0]?.text).toContain(
+        "upstream down",
       );
     });
   });

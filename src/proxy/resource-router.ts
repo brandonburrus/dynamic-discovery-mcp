@@ -103,6 +103,21 @@ export class ResourceRouter {
     return this.detectedCollisions;
   }
 
+  /**
+   * Returns the resources contributed by a single upstream MCP. Used by the load_mcp
+   * pipeline to construct its structured response, which lists what a just-loaded MCP
+   * (or an already-loaded MCP, in the idempotent no-op path) brought to the proxy.
+   * Returns an empty array if the MCP has not contributed any resources (or if
+   * `mcpName` is unknown).
+   */
+  resourcesFor(mcpName: string): readonly Resource[] {
+    return this.perMcp.get(mcpName)?.resources ?? [];
+  }
+
+  templatesFor(mcpName: string): readonly ResourceTemplate[] {
+    return this.perMcp.get(mcpName)?.templates ?? [];
+  }
+
   private rebuild(): void {
     this.uriOwners = new Map();
     this.templateOwners = [];

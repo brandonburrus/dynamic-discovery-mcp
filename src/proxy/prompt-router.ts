@@ -55,6 +55,15 @@ export class PromptRouter {
     return this.detectedCollisions;
   }
 
+  /**
+   * Returns the prompts contributed by a single upstream MCP. Used by the load_mcp
+   * pipeline to construct its structured response. Returns an empty array if the MCP
+   * has not contributed any prompts (or if `mcpName` is unknown).
+   */
+  promptsFor(mcpName: string): readonly Prompt[] {
+    return this.perMcp.get(mcpName) ?? [];
+  }
+
   private rebuild(): void {
     this.nameOwners = new Map();
     const collisions: PromptCollision[] = [];

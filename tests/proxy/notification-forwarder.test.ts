@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationForwarder } from "../../src/proxy/notification-forwarder.js";
 import { PromptRouter } from "../../src/proxy/prompt-router.js";
 import { ResourceRouter } from "../../src/proxy/resource-router.js";
-import type { ToolCatalog } from "../../src/proxy/tool-catalog.js";
 import type { LogMessageParams, UpstreamTool } from "../../src/proxy/upstream-client.js";
 import type { UpstreamRegistry } from "../../src/proxy/upstream-registry.js";
 
@@ -35,14 +34,16 @@ describe("NotificationForwarder", () => {
   let resourceRouter: ResourceRouter;
   let promptRouter: PromptRouter;
   let toolsByMcp: Map<string, UpstreamTool[]>;
-  let latestCatalog: ToolCatalog | null;
+  // Catalog rebuilds are owned by the orchestrator now — the forwarder only triggers
+  // them via this callback. We count invocations to assert that the trigger fired.
+  let rebuildCount: number;
 
   beforeEach(() => {
     clients = new Map();
     resourceRouter = new ResourceRouter(["a", "b"]);
     promptRouter = new PromptRouter(["a", "b"]);
     toolsByMcp = new Map();
-    latestCatalog = null;
+    rebuildCount = 0;
   });
 
   function makeForwarder(namespaced = true): NotificationForwarder {
@@ -51,8 +52,8 @@ describe("NotificationForwarder", () => {
       () => resourceRouter,
       () => promptRouter,
       toolsByMcp,
-      catalog => {
-        latestCatalog = catalog;
+      () => {
+        rebuildCount++;
       },
       namespaced,
     );
@@ -78,12 +79,11 @@ describe("NotificationForwarder", () => {
 
       expect(client.listTools).toHaveBeenCalledOnce();
       expect(toolsByMcp.get("a")).toEqual([{ name: "tool_a", description: "A", inputSchema: {} }]);
-      expect(latestCatalog).not.toBeNull();
-      expect(latestCatalog?.tools.has("a/tool_a")).toBe(true);
+      expect(rebuildCount).toBe(1);
       expect(onToolsListChanged).toHaveBeenCalledOnce();
     });
 
-    it("rebuilds a flat catalog in non-namespaced mode", async () => {
+    it("triggers a catalog rebuild after refetching, regardless of namespacing", async () => {
       const client = makeFakeClient({
         listTools: vi
           .fn()
@@ -97,8 +97,12 @@ describe("NotificationForwarder", () => {
       const forwarder = makeForwarder(false);
       await forwarder.handleToolsListChanged("only");
 
-      expect(latestCatalog?.tools.has("tool_a")).toBe(true);
-      expect(latestCatalog?.tools.has("only/tool_a")).toBe(false);
+      // Catalog composition is the orchestrator's responsibility now — the forwarder's
+      // contract is just "I refetched and asked for a rebuild".
+      expect(rebuildCount).toBe(1);
+      expect(toolsByMcp.get("only")).toEqual([
+        { name: "tool_a", description: "A", inputSchema: {} },
+      ]);
     });
 
     it("no-ops when the mcpName is unknown", async () => {
@@ -109,7 +113,7 @@ describe("NotificationForwarder", () => {
       await forwarder.handleToolsListChanged("ghost");
 
       expect(onToolsListChanged).not.toHaveBeenCalled();
-      expect(latestCatalog).toBeNull();
+      expect(rebuildCount).toBe(0);
     });
 
     it("swallows listTools rejections and treats the upstream as having no tools", async () => {
@@ -254,6 +258,50 @@ describe("NotificationForwarder", () => {
       await expect(
         forwarder.handleLogMessage("a", { level: "info", data: "msg" }),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("notifyXListChanged (emit-only helpers)", () => {
+    it("notifyToolsListChanged invokes the host handler without touching toolsByMcp or the registry", async () => {
+      const onToolsListChanged = vi.fn();
+      const forwarder = makeForwarder();
+      forwarder.setHostHandlers({ onToolsListChanged });
+      toolsByMcp.set("a", [{ name: "x", description: "", inputSchema: {} }]);
+
+      await forwarder.notifyToolsListChanged();
+
+      expect(onToolsListChanged).toHaveBeenCalledOnce();
+      // Critically — no refetch, no rebuild trigger. The orchestrator that owns
+      // load_mcp already populated state directly before calling this helper.
+      expect(rebuildCount).toBe(0);
+      expect(toolsByMcp.get("a")).toEqual([{ name: "x", description: "", inputSchema: {} }]);
+    });
+
+    it("notifyResourcesListChanged invokes the host handler only", async () => {
+      const onResourcesListChanged = vi.fn();
+      const forwarder = makeForwarder();
+      forwarder.setHostHandlers({ onResourcesListChanged });
+
+      await forwarder.notifyResourcesListChanged();
+
+      expect(onResourcesListChanged).toHaveBeenCalledOnce();
+    });
+
+    it("notifyPromptsListChanged invokes the host handler only", async () => {
+      const onPromptsListChanged = vi.fn();
+      const forwarder = makeForwarder();
+      forwarder.setHostHandlers({ onPromptsListChanged });
+
+      await forwarder.notifyPromptsListChanged();
+
+      expect(onPromptsListChanged).toHaveBeenCalledOnce();
+    });
+
+    it("notifyXListChanged silently no-ops when no host handler is registered", async () => {
+      const forwarder = makeForwarder();
+      await expect(forwarder.notifyToolsListChanged()).resolves.toBeUndefined();
+      await expect(forwarder.notifyResourcesListChanged()).resolves.toBeUndefined();
+      await expect(forwarder.notifyPromptsListChanged()).resolves.toBeUndefined();
     });
   });
 

@@ -30,6 +30,10 @@
                 "type": "string",
                 "const": "stdio"
               },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              },
               "command": {
                 "type": "string"
               },
@@ -62,6 +66,10 @@
                 "type": "string",
                 "const": "streamable-http"
               },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              },
               "url": {
                 "type": "string",
                 "format": "uri"
@@ -88,6 +96,10 @@
               "transport": {
                 "type": "string",
                 "const": "sse"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
               },
               "url": {
                 "type": "string",

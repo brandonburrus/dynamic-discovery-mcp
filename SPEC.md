@@ -25,7 +25,9 @@ The core insight: for any given agent goal, only a small subset of tools is actu
 
 The agent workflow becomes: identify what tools exist at a high level → discover the one(s) relevant to the current goal → use them. The full tool schemas of irrelevant tools never enter the context window.
 
-Beyond the discovery pattern applied to tools, `dynmcp` is a **full-fidelity proxy** for the rest of the MCP protocol surface: resources, prompts, completion, logging, notifications, cancellation, progress reporting, and server-initiated requests (sampling, elicitation, roots) are all passed through. The goal is that an agent host talking to `dynmcp` perceives no loss of protocol semantics versus talking directly to each upstream — only the tool catalog is reshaped into the discovery pattern. See [Proxy Behavior](#proxy-behavior) for the full pass-through specification.
+The same principle is extended one level up via **dynamic discovery**: when an upstream MCP in the config file declares a human-readable `description`, that MCP is treated as *lazy* — its connection is deferred and its tools, resources, and prompts are kept out of the host-facing catalog until the agent explicitly opts in by calling **`load_mcp`** with the server's name. The `<mcp_servers>` listing of available-but-not-loaded servers and their descriptions takes the place of their tool entries in the `discover_tool` description, letting the agent reason about which whole MCPs are worth pulling in for the current task without seeing any tools from servers it does not need. See [Dynamic Discovery](#dynamic-discovery) for the full lifecycle and behavior specification.
+
+Beyond the discovery pattern applied to tools and (optionally) to whole servers, `dynmcp` is a **full-fidelity proxy** for the rest of the MCP protocol surface: resources, prompts, completion, logging, notifications, cancellation, progress reporting, and server-initiated requests (sampling, elicitation, roots) are all passed through. The goal is that an agent host talking to `dynmcp` perceives no loss of protocol semantics versus talking directly to each upstream — only the tool catalog (and, in dynamic-discovery mode, the per-server catalogs) is reshaped into the discovery pattern. See [Proxy Behavior](#proxy-behavior) for the full pass-through specification.
 
 `dynamic-discovery-mcp` runs locally only, communicating with both the agent host and upstream MCPs over stdio.
 
@@ -49,6 +51,8 @@ Beyond the discovery pattern applied to tools, `dynmcp` is a **full-fidelity pro
 Allows the agent to learn the full schema of a single upstream tool before calling it.
 
 **Description (dynamic):** Generated at runtime from the upstream tool catalog. The description opens with a one-line instruction, followed by the full tool catalog wrapped in a `<tools>` XML block. Each MCP is listed as a named group with its tools as a bullet list.
+
+When [dynamic discovery](#dynamic-discovery) is enabled, the description additionally includes a `<mcp_servers>` XML block listing every upstream MCP that has not yet been loaded, along with its declared description and an explanatory paragraph telling the agent to use `load_mcp` to make a server's tools available. Tools from not-yet-loaded MCPs do **not** appear in `<tools>` — they appear there only once their MCP has been loaded.
 
 Single MCP (`--` mode) example — no namespace prefix:
 
@@ -82,6 +86,36 @@ filesystem:
 - write_file: Write content to a file
 </tools>
 ```
+
+Dynamic-discovery mode example — `<mcp_servers>` lists not-yet-loaded MCPs; `<tools>` lists only what is currently loaded (eager MCPs and previously loaded lazy MCPs):
+
+```
+Use this tool to look up the full schema of a tool before calling it with use_tool.
+Call discover_tool with a tool name from the list below to get its complete description,
+input parameters, and output schema. Always discover a tool before using it.
+
+Some MCP servers below are not loaded yet and are listed under <mcp_servers> with a
+short description of what they do. To make a server's tools (and any resources or
+prompts it exposes) available, call load_mcp with its name. Once loaded, the server's
+tools will appear in the <tools> list and become callable via use_tool. Loading is
+permanent for the remainder of this session.
+
+<mcp_servers>
+- chrome-devtools: Browser automation via Chrome DevTools Protocol. Navigate pages,
+  take screenshots, inspect the DOM, run JavaScript in page context, capture network
+  traffic. Use when you need to interact with a live web page.
+- jira: Read and write Jira issues, comments, transitions, and sprint state. Use when
+  the task involves tracking work or referencing tickets.
+</mcp_servers>
+
+<tools>
+filesystem:
+- read_file: Read the contents of a file
+- write_file: Write content to a file
+</tools>
+```
+
+If dynamic discovery is enabled and no eager or loaded MCPs are present, the `<tools>` block is omitted and a trailing sentence informs the agent that no tools are currently loaded.
 
 Tool names shown in the catalog match exactly what must be passed to `tool_name` in both `discover_tool` and `use_tool`.
 
@@ -119,6 +153,58 @@ Executes a previously-discovered upstream tool.
 
 ---
 
+### `load_mcp`
+
+Connects to a previously-deferred upstream MCP and makes its tools, resources, and prompts available to the host. Exposed **only** when [dynamic discovery](#dynamic-discovery) is enabled — i.e. when at least one entry in the config file declares a `description` field. In all other modes (single-MCP `--` mode, or config-file mode with no `description` fields anywhere), this tool is not registered.
+
+**Description (static):** `"Load a previously-deferred MCP server so that its tools, resources, and prompts become available. Pass the server name as shown in the <mcp_servers> block of the discover_tool description. Loading is permanent for the remainder of this session."`
+
+**Input:**
+
+| Field | Type | Description |
+|---|---|---|
+| `mcp_name` | `string` | The name of an MCP server listed in `<mcp_servers>` (matches the key under `mcp` in the config file). |
+
+**Output:** A structured listing of everything the just-loaded MCP now exposes:
+
+| Field | Type | Description |
+|---|---|---|
+| `mcp_name` | `string` | Echoes the loaded MCP's name. |
+| `tools` | `Array<{ name, description }>` | Every tool the MCP exposes. `name` is fully namespaced (e.g. `chrome-devtools/browser_navigate`). Schemas are **not** included here — call `discover_tool` to retrieve them. |
+| `resources` | `Array<{ uri, name, description?, mimeType? }>` | Concrete resources (if any). URIs are forwarded verbatim. Empty array if the MCP does not advertise the resources capability. |
+| `resource_templates` | `Array<{ uriTemplate, name, description?, mimeType? }>` | Resource templates (if any). Empty array if not advertised. |
+| `prompts` | `Array<{ name, description?, arguments? }>` | Prompts (if any). Empty array if the MCP does not advertise the prompts capability. |
+
+**Side effects emitted as part of a successful load (in this order):**
+1. `notifications/tools/list_changed` — always, since `discover_tool`'s description has changed (the MCP moves from `<mcp_servers>` into `<tools>`).
+2. `notifications/resources/list_changed` — iff the loaded MCP advertised the `resources` capability and contributed any entries.
+3. `notifications/prompts/list_changed` — iff the loaded MCP advertised the `prompts` capability and contributed any entries.
+
+See [Dynamic Discovery > Capability Constraint](#capability-constraint) for the important caveat about what these notifications can and cannot achieve on the host side.
+
+**Idempotency:** Calling `load_mcp` for an MCP that is already loaded (either an eager MCP from startup, or a lazy MCP loaded earlier in the session) returns the same structured listing with no side effects — no notifications are emitted, no reconnection occurs.
+
+**Concurrency:** Concurrent `load_mcp` calls for **different** MCPs run in parallel. Concurrent `load_mcp` calls for the **same** MCP coalesce — the second call awaits the first's result and returns the same listing. Loads of distinct MCPs are independent: one failing does not affect the others.
+
+**Error behavior:**
+- If `mcp_name` does not match any entry in the config's `mcp` map, return an error listing the names of all currently-lazy (not-yet-loaded) MCPs. (Eager MCPs are intentionally omitted from this hint, since loading them is a no-op and the agent should be steered toward the lazy ones it might actually need.)
+- If `mcp_name` matches an eager (already-loaded) MCP, treat it as a successful no-op per the idempotency rule above, returning the MCP's current listing. This is **not** an error.
+- If the upstream connection or `initialize` handshake fails, return an error containing the underlying failure reason. The MCP remains in the lazy registry and can be retried by calling `load_mcp` again, up to the retry budget described below.
+- If any of the post-initialize catalog queries (`tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`) fail, the load is aborted as a whole: the upstream connection is closed, no notifications are emitted, the MCP remains lazy, and the failure is returned to the caller (subject to the same retry budget).
+
+**Retry budget:** After **three consecutive failed load attempts** for the same MCP, the entry is evicted from the lazy registry. From that point on:
+
+- Subsequent `load_mcp` calls for that name return the "unknown server" error.
+- The entry disappears from the `<mcp_servers>` block of `discover_tool`'s description.
+- `notifications/tools/list_changed` is emitted so the host re-reads the description and stops offering the evicted server to the agent.
+- The third (eviction-triggering) failure's error message indicates that the MCP will no longer be offered for discovery.
+
+A successful load resets the counter (irrelevant in practice, since success also calls `take` and removes the entry from the lazy registry).
+
+This budget prevents an agent from indefinitely burning context retrying a permanently broken upstream while still tolerating two transient hiccups before giving up. Operators who need a higher tolerance should fix the upstream rather than expecting the proxy to retry past three.
+
+---
+
 ## Tool Name Namespacing
 
 All tool names exposed by `dynamic-discovery-mcp` are prefixed with the upstream MCP's configured `name` using a `/` separator:
@@ -139,6 +225,62 @@ Examples:
 
 ---
 
+## Dynamic Discovery
+
+### Overview
+
+By default, every upstream MCP listed in the config file is connected at startup (eager). When at least one entry declares a `description` field, dynamic discovery is **enabled** for the proxy as a whole:
+
+- The `load_mcp` tool is registered and exposed to the host.
+- The `discover_tool` description includes a `<mcp_servers>` block listing every lazy MCP, alongside the explanatory paragraph documented under [`discover_tool`](#discover_tool).
+- Each MCP whose entry has a `description` is treated as **lazy** — its connection is deferred until `load_mcp` is called for it. MCPs whose entries do not have a `description` remain **eager** and connect at startup as today.
+
+In single-MCP (`--`) mode there is no config entry and no place to declare a `description`, so dynamic discovery is never enabled in that mode.
+
+### Lifecycle of a Lazy MCP
+
+A lazy MCP is in exactly one of three states during the proxy's lifetime:
+
+| State | Meaning |
+|---|---|
+| `lazy` | Configured but not connected. Appears in `<mcp_servers>`. Its tools, resources, and prompts are unknown to the proxy and invisible to the host. |
+| `loading` | A `load_mcp` call is in flight: the transport is being opened, `initialize` is being negotiated, and the initial catalog queries (`tools/list`, plus `resources/list` + `resources/templates/list` + `prompts/list` for any declared capabilities) are being issued. Concurrent `load_mcp` calls for this same MCP attach to the same in-flight operation. |
+| `loaded` | Connection and catalog queries succeeded. Tools are namespaced and merged into the live catalog. Resources and prompts are merged into the routers under the standard first-wins collision rules. The MCP behaves identically to an eager MCP from this point on, including subscriptions, server-initiated requests, progress, cancellation, logging, and `*/list_changed` propagation. |
+
+Transitions: `lazy → loading → loaded` on success. On failure during `loading`, the partial connection is torn down and the MCP returns to `lazy`; the load is atomic — the host observes either all of the MCP's surfaces or none of them. There is no `unloaded` state; once `loaded`, an MCP remains loaded for the remainder of the proxy's lifetime (see [Non-Goals](#non-goals-explicit-exclusions)).
+
+### Capability Constraint
+
+This is the most important constraint of the dynamic-discovery design and follows directly from the MCP protocol:
+
+> The proxy's host-facing capabilities are negotiated **once** during the host's `initialize` call. The MCP protocol has no `capabilities/changed` notification, so newly-loaded MCPs cannot cause the proxy to retroactively advertise capabilities it did not advertise at startup.
+
+Concretely:
+
+- Capabilities are aggregated only over **eagerly-loaded** MCPs at host-`initialize` time. Lazy MCPs contribute **nothing** to the host-facing capability set until they are loaded.
+- The `tools` and `tools.listChanged` capabilities are always advertised regardless (see [Capability Aggregation](#capability-aggregation)), so a lazy MCP's tools always work via `load_mcp` → `use_tool` even when no eager MCP advertised the tools capability.
+- A lazy MCP that advertises `resources`, `prompts`, `logging`, or `completions` will have those surfaces merged into the proxy's routers on load and the appropriate `*/list_changed` notification will be emitted — but if **no** eager MCP advertised that same capability at startup, hosts that strictly gate on the negotiated capability set will not listen for or query those surfaces. The notification is emitted regardless, on the theory that some hosts may handle it tolerantly and that emitting it is informationally correct.
+- To guarantee that a particular capability is available to the host, at least one eagerly-loaded (non-`description`) MCP advertising that capability must be present in the config. Operators who want a lazy MCP's resources or prompts to be reliably reachable should either (a) keep that MCP eager, or (b) include some other eager MCP advertising the same capability so the host has negotiated to listen for it.
+
+This trade-off is intentional: the alternative — eagerly probing every lazy MCP at startup just to read its capabilities, then disconnecting — would partially defeat the lazy-loading goal (slow startup, spurious child processes, transient HTTP connections to remote MCPs), and the value of advertising capabilities the host cannot actually reach without first calling `load_mcp` is limited.
+
+### Interaction with the Rest of the Proxy
+
+Once a lazy MCP transitions to `loaded`, every rule in [Proxy Behavior](#proxy-behavior) applies to it without exception. There is no distinction between a "loaded lazy" MCP and an "eager" MCP after the transition completes:
+
+- Tool entries are added to the namespaced catalog. `discover_tool`'s description is regenerated and `notifications/tools/list_changed` is emitted.
+- Resource and prompt entries are added to the routers using the standard first-wins collision policy. Collisions with existing entries are logged at warn level. `notifications/resources/list_changed` and/or `notifications/prompts/list_changed` are emitted as applicable.
+- Subsequent upstream notifications (`notifications/resources/updated`, `notifications/resources/list_changed`, `notifications/prompts/list_changed`, `notifications/tools/list_changed`, `notifications/message`) flow through the existing forwarder.
+- `logging/setLevel` broadcasts from the host include the newly-loaded MCP from the next call onward.
+- Server-initiated requests (`sampling/createMessage`, `elicitation/create`, `roots/list`) from the loaded MCP are forwarded to the host. The same capability constraint above applies — if no eager MCP declared those client-side capabilities at host-`initialize` time, the host may reject them, and that rejection is forwarded back to the upstream verbatim.
+- `notifications/roots/list_changed` from the host is broadcast to the loaded MCP from then on, if it advertised the `roots` capability.
+
+### Shutdown
+
+Lazy MCPs that were never loaded require no teardown. Loaded MCPs are torn down identically to eager MCPs — child processes terminated, HTTP connections closed — as part of the standard proxy shutdown sequence.
+
+---
+
 ## Proxy Behavior
 
 ### Overview
@@ -147,19 +289,19 @@ For every MCP protocol feature other than tools, `dynmcp` is a transparent, full
 
 ### Capability Aggregation
 
-During `initialize`, the proxy advertises a capability to the host iff at least one connected upstream advertises it.
+During the host's `initialize` call, the proxy advertises a capability to the host iff at least one **eagerly-connected** upstream advertises it. Lazy (dynamic-discovery) upstreams are not yet connected at this point and contribute nothing to the negotiated capability set — see [Dynamic Discovery > Capability Constraint](#capability-constraint) for the rationale and implications.
 
 | Capability | Rule |
 |---|---|
-| `tools` | Always advertised (proxy always exposes `discover_tool` and `use_tool`). |
-| `tools.listChanged` | Always advertised. The proxy emits this notification whenever any upstream's tool list changes, so that the host refetches and re-reads the regenerated `discover_tool` description. |
-| `resources` | Advertised iff any upstream advertises it. |
-| `resources.subscribe` | Advertised iff any upstream advertises it. |
-| `resources.listChanged` | Advertised iff any upstream advertises it. |
-| `prompts` | Advertised iff any upstream advertises it. |
-| `prompts.listChanged` | Advertised iff any upstream advertises it. |
-| `logging` | Advertised iff any upstream advertises it. |
-| `completions` | Advertised iff any upstream advertises it. |
+| `tools` | Always advertised (proxy always exposes `discover_tool` and `use_tool`, plus `load_mcp` when dynamic discovery is enabled). |
+| `tools.listChanged` | Always advertised. The proxy emits this notification whenever any upstream's tool list changes, or when an MCP transitions from `lazy` to `loaded`, so that the host refetches and re-reads the regenerated `discover_tool` description. |
+| `resources` | Advertised iff any **eager** upstream advertises it. |
+| `resources.subscribe` | Advertised iff any **eager** upstream advertises it. |
+| `resources.listChanged` | Advertised iff any **eager** upstream advertises it. |
+| `prompts` | Advertised iff any **eager** upstream advertises it. |
+| `prompts.listChanged` | Advertised iff any **eager** upstream advertises it. |
+| `logging` | Advertised iff any **eager** upstream advertises it. |
+| `completions` | Advertised iff any **eager** upstream advertises it. |
 
 The proxy negotiates protocol version with the host independently from each upstream. If an upstream supports an older protocol version than the host negotiated, the proxy serves the host at the host's version and limits behavior toward that one upstream to features that upstream supports.
 
@@ -280,6 +422,7 @@ Each entry in `mcp` is a map where the key is the MCP name and the value is its 
   "env": "enable",
   "mcp": {
     "chrome-devtools": {
+      "description": "Browser automation via Chrome DevTools Protocol. Navigate pages, take screenshots, inspect the DOM, run JavaScript in page context.",
       "transport": "stdio",
       "command": "npx",
       "args": ["-y", "chrome-devtools-mcp@latest"]
@@ -307,6 +450,8 @@ Each entry in `mcp` is a map where the key is the MCP name and the value is its 
 }
 ```
 
+In the example above, `chrome-devtools` declares a `description` and is therefore **lazy** — its connection is deferred and it is reachable only via `load_mcp`. The other three entries do not declare a `description` and are **eager** — they connect at startup as before. The presence of `chrome-devtools`'s `description` enables dynamic discovery for the proxy as a whole, which causes the `load_mcp` meta-tool to be registered and the `<mcp_servers>` block to appear in `discover_tool`'s description. See [Dynamic Discovery](#dynamic-discovery).
+
 **Top-level fields:**
 
 | Field | Type | Required | Description |
@@ -320,11 +465,12 @@ Each entry in `mcp` is a map where the key is the MCP name and the value is its 
 |---|---|---|---|
 | `mcp.<key>` | `string` | Yes | The MCP name. Used as the namespace prefix for all its tools. Must match `/^[a-z0-9][a-z0-9-]*$/`. |
 
-**`transport` field (all entries):**
+**Common entry fields (all transports):**
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `transport` | `"stdio" \| "streamable-http" \| "sse"` | Yes | How `dynamic-discovery-mcp` connects to this upstream MCP. |
+| `description` | `string` | No | When present, marks this MCP as **lazy** (dynamic-discovery). The MCP is not connected at startup; instead, this string is shown to the agent in the `<mcp_servers>` block of `discover_tool`'s description so the agent can decide whether to invoke `load_mcp` for it. Must be a non-empty string after environment-variable interpolation. The presence of this field on **any** entry enables dynamic discovery for the proxy as a whole. See [Dynamic Discovery](#dynamic-discovery). |
 
 **`stdio` transport fields:**
 
@@ -344,6 +490,7 @@ Each entry in `mcp` is a map where the key is the MCP name and the value is its 
 **Validation rules enforced at startup:**
 - `stdio` entries must not include `url` or `headers`.
 - `streamable-http` and `sse` entries must not include `command`, `args`, or `env`.
+- `description`, if present, must be a non-empty string after environment-variable interpolation. An empty or whitespace-only `description` causes a startup error.
 
 ### YAML equivalent
 
@@ -351,6 +498,9 @@ Each entry in `mcp` is a map where the key is the MCP name and the value is its 
 env: enable
 mcp:
   chrome-devtools:
+    description: >
+      Browser automation via Chrome DevTools Protocol. Navigate pages, take
+      screenshots, inspect the DOM, run JavaScript in page context.
     transport: stdio
     command: npx
     args: ["-y", "chrome-devtools-mcp@latest"]
@@ -397,6 +547,7 @@ Bare `$VAR` references are **not** supported — only the `${...}` brace form is
 
 Interpolation applies only to **leaf string values** in the config — i.e. wherever the schema expects a `string`. Specifically:
 
+- `description` (on any entry)
 - `stdio.command`
 - Each element of `stdio.args`
 - Each value in `stdio.env`
@@ -472,13 +623,16 @@ npx -y dynmcp --config ./my-config.json
 
 **Startup sequence:**
 1. Parse CLI arguments and determine mode (`--` command vs config file).
-2. If config file mode, locate and parse the config file, then validate against the Zod schema.
-3. Connect to each upstream MCP — spawn as a child process for `stdio` entries, or open an HTTP connection for `streamable-http` and `sse` entries. Negotiate `initialize` with each upstream and record its declared capabilities.
-4. Query each upstream MCP for its full tool list, and (for capability-advertising upstreams) prompts, resource templates, and initial resource list. Detect resource-URI and prompt-name collisions and log warnings.
-5. Build the `discover_tool` description from the combined, namespaced tool catalog. Build the aggregated capability set for the host-facing `initialize` response.
-6. Start accepting MCP requests from the parent over stdio.
+2. If config file mode, locate and parse the config file, perform environment-variable interpolation, then validate against the Zod schema.
+3. Partition entries into **eager** (no `description`) and **lazy** (has `description`). If any entry is lazy, dynamic discovery is enabled for the proxy (the `load_mcp` meta-tool will be registered and the `<mcp_servers>` block will be included in `discover_tool`'s description).
+4. Connect only to **eager** upstreams — spawn as child processes for `stdio` entries, or open HTTP connections for `streamable-http` and `sse` entries. Negotiate `initialize` with each eager upstream and record its declared capabilities. Lazy upstreams are not contacted at this stage; only their names and descriptions are registered.
+5. Query each eager upstream for its full tool list, and (for capability-advertising eager upstreams) prompts, resource templates, and initial resource list. Detect resource-URI and prompt-name collisions and log warnings.
+6. Build the `discover_tool` description from the combined namespaced tool catalog (eager MCPs only at this stage) plus, when dynamic discovery is enabled, the `<mcp_servers>` block for the lazy MCPs. Build the aggregated capability set for the host-facing `initialize` response — see [Capability Aggregation](#capability-aggregation), noting that lazy MCPs contribute nothing here.
+7. Start accepting MCP requests from the parent over stdio.
 
-**Shutdown:** When the parent disconnects or the process receives SIGTERM/SIGINT, all spawned child processes are terminated before exit. HTTP connections are closed. Any in-flight server-initiated requests against the host are abandoned without forwarding their responses.
+Subsequent `load_mcp` calls during runtime perform the equivalent of steps 4–5 scoped to a single lazy upstream, then trigger a regeneration of `discover_tool`'s description and the appropriate `*/list_changed` notifications. See [Dynamic Discovery > Lifecycle of a Lazy MCP](#lifecycle-of-a-lazy-mcp).
+
+**Shutdown:** When the parent disconnects or the process receives SIGTERM/SIGINT, all spawned child processes are terminated before exit. HTTP connections are closed. Any in-flight server-initiated requests against the host are abandoned without forwarding their responses. Lazy MCPs that were never loaded require no teardown.
 
 ---
 
@@ -513,6 +667,8 @@ The following are explicitly out of scope and must not be built unless this spec
 - Automatic upstream MCP discovery (e.g. scanning a config directory).
 - Discovery-pattern abstraction over resources or prompts. These are passed through natively per [Proxy Behavior](#proxy-behavior); they are not hidden behind meta-tools the way `tools/call` is hidden behind `use_tool`.
 - Per-upstream log level control. `logging/setLevel` is broadcast to all upstreams; selective routing is not supported.
+- An `unload_mcp` counterpart to `load_mcp`. Loaded upstreams remain loaded for the proxy's lifetime; thrashing connections does not advance the context-management goal that motivated dynamic discovery in the first place. See [Dynamic Discovery](#dynamic-discovery).
+- Eager probing of lazy MCPs at startup to discover their capabilities. The capability constraint documented in [Dynamic Discovery > Capability Constraint](#capability-constraint) is the deliberate trade-off.
 
 ---
 
@@ -525,3 +681,4 @@ The following are explicitly out of scope and must not be built unless this spec
 | 2026-05-18 | Added `streamable-http` and `sse` transport support to config file schema for connecting to remote upstream MCPs |
 | 2026-05-18 | Added environment variable interpolation in config file leaf string values (`${VAR}` and `${VAR:-default}` syntax, `$${...}` escape). New top-level `env` field (`"enable"` default, `"dotenv"`, `"process"`, `"disable"`). New `--env` / `-e` CLI flag for custom `.env` path. Removed corresponding non-goal. |
 | 2026-05-18 | Added full-fidelity upstream proxying for resources, prompts, completion, logging, notifications, cancellation, progress, and server-initiated requests (`sampling/createMessage`, `elicitation/create`, `roots/list`). New "Proxy Behavior" section. Resource URIs and prompt names pass through verbatim with first-config-wins collision resolution; tool names remain namespaced. Removed corresponding non-goals. |
+| 2026-05-18 | Added dynamic discovery: per-entry optional `description` field in the config file marks an MCP as lazy. New `load_mcp` meta-tool (registered only when dynamic discovery is enabled) connects a lazy MCP on demand and returns its tools, resources, and prompts. New `<mcp_servers>` block in `discover_tool`'s description lists not-yet-loaded MCPs. New "Dynamic Discovery" section codifies the lazy lifecycle, idempotency / concurrency semantics, and the capability-aggregation constraint (lazy upstreams contribute nothing to host-`initialize` capability negotiation; their non-tool surfaces are best-effort on load). Added a three-strike retry budget on failed `load_mcp` attempts: after three consecutive failures the lazy entry is evicted, `tools/list_changed` fires, and subsequent calls receive "unknown server". New non-goals: no `unload_mcp`; no eager capability probing. |

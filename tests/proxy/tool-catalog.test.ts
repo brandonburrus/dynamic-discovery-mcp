@@ -83,4 +83,109 @@ describe("ToolCatalog", () => {
       expect(details).toContain("browser_screenshot");
     });
   });
+
+  describe("fromGroupedWithLazy", () => {
+    const groupedTool: UpstreamTool = {
+      name: "navigate",
+      description: "Go somewhere",
+      inputSchema: { type: "object", properties: {} },
+    };
+
+    it("renders only <tools> (no <mcp_servers>) when there are no lazy entries", () => {
+      const groups = new Map([["chrome", [groupedTool]]]);
+      const catalog = ToolCatalog.fromGroupedWithLazy(groups, new Map());
+
+      expect(catalog.discoverToolDescription).not.toContain("<mcp_servers>");
+      expect(catalog.discoverToolDescription).toContain("<tools>");
+      expect(catalog.discoverToolDescription).toContain("chrome/navigate: Go somewhere");
+    });
+
+    it("renders both <mcp_servers> and <tools> in mixed mode", () => {
+      const groups = new Map([["filesystem", [{ ...groupedTool, name: "read_file" }]]]);
+      const lazy = new Map([
+        ["chrome", "Browser automation"],
+        ["jira", "Ticket tracking"],
+      ]);
+      const catalog = ToolCatalog.fromGroupedWithLazy(groups, lazy);
+
+      expect(catalog.discoverToolDescription).toContain("<mcp_servers>");
+      expect(catalog.discoverToolDescription).toContain("- chrome: Browser automation");
+      expect(catalog.discoverToolDescription).toContain("- jira: Ticket tracking");
+      expect(catalog.discoverToolDescription).toContain("<tools>");
+      expect(catalog.discoverToolDescription).toContain("filesystem/read_file");
+    });
+
+    it("preserves config-file (insertion) order for the <mcp_servers> block", () => {
+      // Insertion order: jira, chrome, filesystem. Confirm that order is preserved
+      // rather than collapsed to alphabetical.
+      const lazy = new Map([
+        ["jira", "J"],
+        ["chrome", "C"],
+        ["filesystem", "F"],
+      ]);
+      const catalog = ToolCatalog.fromGroupedWithLazy(new Map(), lazy);
+
+      const desc = catalog.discoverToolDescription;
+      const jiraIdx = desc.indexOf("jira:");
+      const chromeIdx = desc.indexOf("chrome:");
+      const filesystemIdx = desc.indexOf("filesystem:");
+
+      expect(jiraIdx).toBeGreaterThan(-1);
+      expect(chromeIdx).toBeGreaterThan(jiraIdx);
+      expect(filesystemIdx).toBeGreaterThan(chromeIdx);
+    });
+
+    it("omits the <tools> block and appends the load_mcp footer when only lazy entries exist", () => {
+      const lazy = new Map([["chrome", "Browser"]]);
+      const catalog = ToolCatalog.fromGroupedWithLazy(new Map(), lazy);
+
+      expect(catalog.discoverToolDescription).toContain("<mcp_servers>");
+      // Check for the absence of the closing tag — the explanatory paragraph mentions
+      // the word "<tools>" in prose, so the substring alone is a false positive.
+      expect(catalog.discoverToolDescription).not.toContain("</tools>");
+      expect(catalog.discoverToolDescription).toContain(
+        "No tools are currently loaded. Call load_mcp",
+      );
+    });
+
+    it("includes the explanatory paragraph telling the agent about load_mcp", () => {
+      const lazy = new Map([["chrome", "Browser"]]);
+      const catalog = ToolCatalog.fromGroupedWithLazy(new Map(), lazy);
+
+      expect(catalog.discoverToolDescription).toContain(
+        "Some MCP servers below are not loaded yet",
+      );
+      expect(catalog.discoverToolDescription).toContain("call load_mcp with its name");
+    });
+
+    it("post-load: a previously-lazy MCP appears under <tools> and is gone from <mcp_servers>", () => {
+      // Simulates the orchestrator's state after `loadMcp('chrome')` succeeds:
+      // - chrome's tools are now in `groups`
+      // - chrome is no longer in `lazyDescriptions` (lazyRegistry.take removed it)
+      const groups = new Map([["chrome", [{ ...groupedTool, name: "browser_navigate" }]]]);
+      const lazy = new Map([["jira", "Tickets"]]);
+      const catalog = ToolCatalog.fromGroupedWithLazy(groups, lazy);
+
+      expect(catalog.discoverToolDescription).toContain("chrome/browser_navigate");
+      expect(catalog.discoverToolDescription).not.toMatch(/chrome:\s+Browser/);
+      // jira still listed as lazy.
+      expect(catalog.discoverToolDescription).toContain("- jira: Tickets");
+    });
+
+    it("namespaced tool names from lazy-loaded MCPs are addressable via the tools map", () => {
+      const groups = new Map([["chrome", [groupedTool]]]);
+      const catalog = ToolCatalog.fromGroupedWithLazy(groups, new Map());
+
+      expect(catalog.tools.has("chrome/navigate")).toBe(true);
+      expect(catalog.tools.has("navigate")).toBe(false);
+    });
+
+    it("fromGrouped delegates to fromGroupedWithLazy with an empty lazy map", () => {
+      const groups = new Map([["chrome", [groupedTool]]]);
+      const viaShortcut = ToolCatalog.fromGrouped(groups);
+      const viaLong = ToolCatalog.fromGroupedWithLazy(groups, new Map());
+
+      expect(viaShortcut.discoverToolDescription).toBe(viaLong.discoverToolDescription);
+    });
+  });
 });

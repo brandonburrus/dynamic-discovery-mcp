@@ -69,6 +69,7 @@ type ProxyServerConfigShape = {
   complete?: (params: unknown, options?: unknown) => Promise<unknown>;
   setLoggingLevel?: (level: string, options?: unknown) => Promise<unknown>;
   onRootsListChanged?: () => void | Promise<void>;
+  loadMcp?: (mcpName: string) => Promise<unknown>;
 };
 
 let capturedProxyConfig: ProxyServerConfigShape | undefined;
@@ -345,6 +346,13 @@ describe("startProxy()", () => {
 
       const config = capturedProxyConfig as ProxyServerConfigShape;
       expect(typeof config.callTool).toBe("function");
+    });
+
+    it("does NOT wire loadMcp in single-MCP (`--`) mode since lazy upstreams are disallowed there", async () => {
+      await startProxy("test-server", []);
+
+      const config = capturedProxyConfig as ProxyServerConfigShape;
+      expect(config.loadMcp).toBeUndefined();
     });
   });
 });
