@@ -1,5 +1,6 @@
 import process from "node:process";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { isAuthRequiredError } from "../auth/index.js";
 import type {
   CallToolResult,
   CompleteRequest,
@@ -320,10 +321,19 @@ export class Orchestrator {
         prompts = await client.listPrompts();
       }
     } catch (error) {
-      // Roll back atomically: drop the half-loaded upstream. Track the failure
-      // against the retry budget — once exhausted, evict the lazy entry entirely
-      // and emit `tools/list_changed` so the host sees `<mcp_servers>` update.
+      // Roll back atomically: drop the half-loaded upstream. Auth-required failures
+      // are operator-actionable (user must run `dynmcp login`), not transient —
+      // counting them toward the retry budget would silently evict the MCP before
+      // the user can act. The lazy entry stays registered for unlimited retries
+      // until the user completes the login flow. See SPEC.md § "Upstream OAuth >
+      // Proxy Runtime Behavior".
       await this.registry.deleteOne(mcpName);
+      if (isAuthRequiredError(error)) {
+        throw error;
+      }
+      // All other failures count against the retry budget. Once exhausted, evict
+      // the lazy entry entirely and emit `tools/list_changed` so the host sees
+      // `<mcp_servers>` update.
       const failures = this.lazyRegistry.recordFailure(mcpName);
       if (failures >= MAX_LOAD_ATTEMPTS) {
         this.lazyRegistry.take(mcpName);

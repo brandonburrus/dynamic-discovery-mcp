@@ -53,7 +53,8 @@ Connects to a remote MCP over HTTP.
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `url` | `string` | Yes | The URL of the remote MCP endpoint. Must be a valid `http://` or `https://` URL. |
-| `headers` | `Record<string, string>` | No | HTTP headers included on every request. Typically used for auth (e.g. `Authorization: Bearer ${TOKEN}`). |
+| `headers` | `Record<string, string>` | No | HTTP headers included on every request. Typically used for static bearer-token auth (e.g. `Authorization: Bearer ${TOKEN}`). |
+| `auth` | `object` | No | Pre-registered OAuth client credentials. Omit to use Dynamic Client Registration on first `dynmcp login`. See [OAuth reference](/reference/oauth/). |
 
 ```json
 {
@@ -72,6 +73,7 @@ Connects to a remote MCP over Server-Sent Events.
 |---|---|---|---|
 | `url` | `string` | Yes | The URL of the remote SSE endpoint. Must be a valid `http://` or `https://` URL. |
 | `headers` | `Record<string, string>` | No | HTTP headers included on the connection request. |
+| `auth` | `object` | No | Pre-registered OAuth client credentials. Omit to use Dynamic Client Registration on first `dynmcp login`. See [OAuth reference](/reference/oauth/). |
 
 ```json
 {
@@ -85,15 +87,43 @@ Connects to a remote MCP over Server-Sent Events.
 }
 ```
 
+## `auth` field (streamable-http and sse only)
+
+Optional. Use this to supply pre-registered OAuth client credentials. When `auth` is omitted, `dynmcp login` uses Dynamic Client Registration to register a fresh client automatically.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `auth.client_id` | `string` | Yes (if `auth` present) | Pre-registered OAuth client ID. |
+| `auth.client_secret` | `string` | No | Pre-registered client secret for confidential clients. Omit for public (PKCE-only) clients. |
+| `auth.scope` | `string` | No | Space-separated OAuth scopes to request. Overrides scopes advertised by the server's protected-resource metadata. |
+
+```json
+{
+  "linear": {
+    "transport": "streamable-http",
+    "url": "https://mcp.linear.app",
+    "auth": {
+      "client_id": "${LINEAR_OAUTH_CLIENT_ID}",
+      "client_secret": "${LINEAR_OAUTH_CLIENT_SECRET}",
+      "scope": "read write"
+    }
+  }
+}
+```
+
+`auth` is rejected on `stdio` entries. See the [OAuth Authentication guide](/guides/oauth-authentication/) for the full flow, and the [OAuth reference](/reference/oauth/) for keychain storage and runtime behavior.
+
 ## Validation rules
 
 The following are enforced at startup; violations are reported before any upstream MCP is contacted:
 
 - The `mcp` map must contain at least one entry. An empty `mcp: {}` is a startup error.
-- `stdio` entries must **not** include `url` or `headers`.
+- `stdio` entries must **not** include `url`, `headers`, or `auth`.
 - `streamable-http` and `sse` entries must **not** include `command`, `args`, or `env`.
 - `streamable-http` and `sse` `url` fields must be valid `http://` or `https://` URLs.
 - `description`, if present, must be non-empty after environment-variable interpolation. An empty or whitespace-only `description` is a startup error.
+- `auth.client_id`, if `auth` is present, must be non-empty after environment-variable interpolation.
+- Unknown keys inside the `auth` block are rejected.
 - MCP names (keys under `mcp`) must match `/^[a-z0-9][a-z0-9-]*$/`.
 
 ## Editor support

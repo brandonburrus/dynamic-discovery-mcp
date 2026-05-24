@@ -58,10 +58,13 @@ Connects to a remote MCP over HTTP. Use this for hosted MCPs that expose an HTTP
 |---|---|---|
 | `url` | Yes | Full URL of the MCP endpoint. Must be a valid `http://` or `https://` URL. |
 | `headers` | No | Map of HTTP headers included on every request. |
+| `auth` | No | Pre-registered OAuth client credentials. See [Auth](#auth). |
 
 ### Auth
 
-Combine `headers` with [environment variable interpolation](/guides/environment-variables/) to keep bearer tokens and API keys out of the config file:
+There are two ways to authenticate to a `streamable-http` (or `sse`) upstream, depending on what the server supports:
+
+**1. Static bearer token via `headers`.** Use when the server accepts a long-lived API key or PAT in the `Authorization` header. Combine with [environment variable interpolation](/guides/environment-variables/) to keep secrets out of the config file:
 
 ```json
 {
@@ -74,6 +77,24 @@ Combine `headers` with [environment variable interpolation](/guides/environment-
   }
 }
 ```
+
+**2. OAuth 2.1 with PKCE.** Use when the server returns a 401 challenge with OAuth metadata. `dynmcp` handles the full authorization-code flow via the [`dynmcp login`](/reference/cli/#oauth-login--logout) subcommand and persists tokens to your OS keychain. No config change is required for the auto-detected default; supply an optional `auth` block to override Dynamic Client Registration with pre-registered credentials:
+
+```json
+{
+  "linear": {
+    "transport": "streamable-http",
+    "url": "https://mcp.linear.app",
+    "auth": {
+      "client_id": "${LINEAR_OAUTH_CLIENT_ID}",
+      "client_secret": "${LINEAR_OAUTH_CLIENT_SECRET}",
+      "scope": "read write"
+    }
+  }
+}
+```
+
+See the [OAuth Authentication guide](/guides/oauth-authentication/) for the walkthrough and the [OAuth reference](/reference/oauth/) for keychain storage details and runtime behavior.
 
 ## sse
 
@@ -97,6 +118,7 @@ Connects to a remote MCP over Server-Sent Events. Similar shape to `streamable-h
 |---|---|---|
 | `url` | Yes | Full URL of the SSE endpoint. Must be a valid `http://` or `https://` URL. |
 | `headers` | No | Map of HTTP headers included on the connection request. |
+| `auth` | No | Pre-registered OAuth client credentials. Identical semantics to the [`streamable-http` auth block](#auth). |
 
 ## Mixing transports
 
@@ -106,7 +128,7 @@ You can mix transports freely in a single config. Each entry's `transport` discr
 
 Each transport's fields are mutually exclusive. The Zod schema rejects mixing them at startup:
 
-- `stdio` entries can't include `url` or `headers`.
+- `stdio` entries can't include `url`, `headers`, or `auth`.
 - `streamable-http` and `sse` entries can't include `command`, `args`, or `env`.
 
 A misconfiguration produces a startup error before any connection is attempted.

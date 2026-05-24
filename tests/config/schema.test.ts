@@ -130,4 +130,96 @@ describe("mcpConfigSchema", () => {
     const result = mcpConfigSchema.safeParse(input);
     expect(result.success).toBe(false);
   });
+
+  describe("auth field (OAuth pre-registered credentials)", () => {
+    it("accepts auth.client_id on streamable-http", () => {
+      const input = {
+        mcp: {
+          server: {
+            transport: "streamable-http",
+            url: "https://example.com/mcp",
+            auth: { client_id: "abc123" },
+          },
+        },
+      };
+
+      const result = mcpConfigSchema.safeParse(input);
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts auth.client_id + client_secret + scope on sse", () => {
+      const input = {
+        mcp: {
+          server: {
+            transport: "sse",
+            url: "https://example.com/sse",
+            auth: { client_id: "abc", client_secret: "shh", scope: "read write" },
+          },
+        },
+      };
+
+      const result = mcpConfigSchema.safeParse(input);
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects auth on stdio entries", () => {
+      const input = {
+        mcp: {
+          server: {
+            transport: "stdio",
+            command: "node",
+            auth: { client_id: "abc" },
+          },
+        },
+      };
+
+      const result = mcpConfigSchema.safeParse(input);
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects empty auth.client_id", () => {
+      const input = {
+        mcp: {
+          server: {
+            transport: "streamable-http",
+            url: "https://example.com/mcp",
+            auth: { client_id: "" },
+          },
+        },
+      };
+
+      const result = mcpConfigSchema.safeParse(input);
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects whitespace-only auth.client_id", () => {
+      const input = {
+        mcp: {
+          server: {
+            transport: "streamable-http",
+            url: "https://example.com/mcp",
+            auth: { client_id: "   " },
+          },
+        },
+      };
+
+      const result = mcpConfigSchema.safeParse(input);
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects unknown keys inside auth", () => {
+      const input = {
+        mcp: {
+          server: {
+            transport: "streamable-http",
+            url: "https://example.com/mcp",
+            auth: { client_id: "abc", redirect_uri: "http://localhost" },
+          },
+        },
+      };
+
+      const result = mcpConfigSchema.safeParse(input);
+      expect(result.success).toBe(false);
+    });
+  });
 });

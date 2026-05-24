@@ -82,6 +82,27 @@
                 "additionalProperties": {
                   "type": "string"
                 }
+              },
+              "auth": {
+                "type": "object",
+                "properties": {
+                  "client_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "client_secret": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "scope": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "client_id"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
@@ -113,6 +134,27 @@
                 "additionalProperties": {
                   "type": "string"
                 }
+              },
+              "auth": {
+                "type": "object",
+                "properties": {
+                  "client_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "client_secret": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "scope": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "client_id"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [

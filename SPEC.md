@@ -486,11 +486,13 @@ In the example above, `chrome-devtools` declares a `description` and is therefor
 |---|---|---|---|
 | `url` | `string` | Yes | The URL of the remote MCP endpoint. Must be a valid URL. |
 | `headers` | `Record<string, string>` | No | HTTP headers to include on every request (e.g. for bearer token auth). |
+| `auth` | `object` | No | Pre-registered OAuth client credentials. When omitted, the proxy uses Dynamic Client Registration on first `dynmcp login`. See [Upstream OAuth > Auth Config](#auth-config). |
 
 **Validation rules enforced at startup:**
-- `stdio` entries must not include `url` or `headers`.
+- `stdio` entries must not include `url`, `headers`, or `auth`.
 - `streamable-http` and `sse` entries must not include `command`, `args`, or `env`.
 - `description`, if present, must be a non-empty string after environment-variable interpolation. An empty or whitespace-only `description` causes a startup error.
+- `auth.client_id`, if `auth` is present, must be a non-empty string after environment-variable interpolation.
 
 ### YAML equivalent
 
@@ -595,6 +597,285 @@ All interpolation errors surface at startup, before any upstream MCP is connecte
 
 ---
 
+## Upstream OAuth
+
+### Overview
+
+`streamable-http` and `sse` upstream MCPs may require OAuth 2.1 authorization. `dynmcp` handles this auth out-of-band via the `dynmcp login` and `dynmcp logout` CLI subcommands, persisting tokens to the operating system's keychain (`@napi-rs/keyring`). The proxy process itself **never** opens a browser, never blocks a host request waiting for human action, and never accepts credentials interactively over stdio. All interactive auth happens in a separate `dynmcp login` invocation from the user's terminal.
+
+`stdio` upstreams are out of scope — OAuth is irrelevant for locally-spawned subprocesses.
+
+Auth is **auto-detected** from the protocol per the [MCP Authorization spec](https://modelcontextprotocol.io/specification/draft/basic/authorization): when an upstream returns `HTTP 401 Unauthorized` with a `WWW-Authenticate: Bearer resource_metadata=<url>` header, the proxy's auth provider kicks in. No config field is required to "turn on" OAuth; the absence of cached credentials in the keychain plus a 401 challenge is the trigger.
+
+### Supported OAuth Surface
+
+| Feature | Status |
+|---|---|
+| OAuth 2.1 authorization-code grant with PKCE (RFC 7636) | Required |
+| Protected Resource Metadata discovery (RFC 9728) | Required |
+| Authorization Server Metadata discovery (RFC 8414) | Required |
+| Dynamic Client Registration (RFC 7591) | Default — used when no `auth` config block is present |
+| Pre-registered client credentials via config | Optional — see [Auth Config](#auth-config) |
+| Access token refresh via refresh token | Required (silent, in-process) |
+| Device-code grant (RFC 8628) | **Non-goal** for v1 |
+| Client-credentials grant | **Non-goal** for v1 |
+| Implicit grant | **Non-goal** (deprecated in OAuth 2.1) |
+
+### Auth Config
+
+A new optional `auth` field is added to the `streamable-http` and `sse` transport entries in the config file:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `auth.client_id` | `string` | Yes (if `auth` present) | Pre-registered OAuth client ID. Supplying this disables Dynamic Client Registration for this MCP. |
+| `auth.client_secret` | `string` | No | Pre-registered OAuth client secret for confidential clients. Public clients (PKCE-only) should omit this. |
+| `auth.scope` | `string` | No | Space-separated OAuth scopes to request. Overrides the scopes advertised in the server's protected-resource metadata. |
+
+Example:
+
+```json
+{
+  "mcp": {
+    "linear": {
+      "transport": "streamable-http",
+      "url": "https://mcp.linear.app",
+      "auth": {
+        "client_id": "${LINEAR_OAUTH_CLIENT_ID}",
+        "client_secret": "${LINEAR_OAUTH_CLIENT_SECRET}",
+        "scope": "read write"
+      }
+    },
+    "notion": {
+      "transport": "streamable-http",
+      "url": "https://mcp.notion.com"
+    }
+  }
+}
+```
+
+In this example, `linear` uses operator-supplied credentials, while `notion` relies on Dynamic Client Registration (no `auth` block).
+
+Notes:
+
+- `auth` is **only** valid on `streamable-http` and `sse` entries. Validation rejects it on `stdio`.
+- `auth.client_id` and `auth.client_secret` are interpolation targets — values like `${LINEAR_OAUTH_CLIENT_ID}` work per [Environment Variable Interpolation](#environment-variable-interpolation).
+- Authorization-server endpoint URLs (`authorization_endpoint`, `token_endpoint`, `registration_endpoint`) are **always** discovered via RFC 8414 metadata. There is no config override for them — servers that don't expose RFC 8414 metadata are unsupported. This avoids drift between configured and actual endpoints.
+
+### Keychain Storage
+
+| Aspect | Value |
+|---|---|
+| Library | `@napi-rs/keyring` (macOS Keychain, Linux libsecret, Windows Credential Manager) |
+| Service | `dynmcp` |
+| Account | `<mcp-name>:<resource-server-origin>` — e.g. `linear:https://mcp.linear.app` |
+| Value | JSON blob (see schema below) |
+
+The account format includes the resource server origin so that re-pointing an MCP name at a different URL in config does not silently authenticate against stale tokens — the keychain entry simply won't be found and a fresh `dynmcp login` is required.
+
+**Blob schema:**
+
+```ts
+{
+  access_token: string,
+  token_type: "Bearer",
+  expires_at: number,              // Unix epoch seconds, computed from `expires_in` at issue time
+  refresh_token?: string,          // present iff the server issued one
+  scope_granted?: string,          // space-separated scopes actually granted
+  authorization_server: {
+    issuer: string,
+    authorization_endpoint: string,
+    token_endpoint: string,
+    registration_endpoint?: string,
+    revocation_endpoint?: string
+  },
+  resource_metadata: {
+    resource: string,              // canonical resource URI
+    authorization_servers: string[]
+  },
+  dcr?: {                          // present iff DCR was used (no `auth` config block)
+    client_id: string,
+    client_secret?: string,        // present iff the server registered as confidential
+    registration_access_token?: string,  // RFC 7591 §3.2.1
+    registration_client_uri?: string
+  }
+}
+```
+
+When the user supplied `auth.client_id` / `auth.client_secret` via config, those values are read from config at use time and **not** mirrored into the keychain. Rotating credentials in config does not require a logout.
+
+### `dynmcp login <name>`
+
+Interactive OAuth flow for a single upstream MCP.
+
+**Behavior:**
+
+1. Validate that `<name>` exists in the config file and that its transport is `streamable-http` or `sse`. Reject `stdio` entries with a clear error.
+2. Connect to the upstream URL with no `Authorization` header to trigger the 401 challenge, then read the `resource_metadata` URL from the `WWW-Authenticate` header.
+3. Fetch the RFC 9728 protected-resource metadata. Pick the first entry from `authorization_servers`. Fetch its RFC 8414 metadata.
+4. **If** the config has no `auth` block for this MCP **and** no DCR record is cached in the keychain for it: perform RFC 7591 Dynamic Client Registration against `registration_endpoint`. Cache the registration in the keychain blob (committed only after the full flow succeeds — see step 9).
+5. Bind a local HTTP server on `127.0.0.1` at an OS-assigned ephemeral port. The redirect URI is `http://127.0.0.1:<port>/callback`.
+6. Generate a PKCE code verifier + challenge (S256) and a `state` value (CSPRNG, 32 bytes, base64url). Construct the authorization URL using scopes from `auth.scope` if present, else from the protected-resource metadata.
+7. Open the authorization URL in the user's default browser (`open` on macOS, `xdg-open` on Linux, `start` on Windows). If launching the browser fails, print the URL to stderr with instructions to paste it manually.
+8. Wait for the redirect callback on the local server, with a 60-second timeout. Validate `state` matches; reject mismatches without exchanging the code. The callback responds with a minimal HTML page ("You may close this tab and return to your terminal.") and shuts down the local server.
+9. POST to `token_endpoint` with the authorization code and PKCE verifier. On success, persist the keychain blob (overwriting any prior entry for this account) and print success to stderr. On failure, print the error and exit non-zero; no keychain write occurs and any newly-generated DCR registration is discarded.
+
+**Errors:**
+
+- `<name>` not found or wrong transport → exit non-zero with a clear message.
+- Single-MCP mode (`--`) → not applicable; `dynmcp login` requires a config file and rejects with an explanatory error.
+- The upstream does not return a 401 challenge or returns no `resource_metadata` URL → exit non-zero. The MCP does not require OAuth and credentials are not stored.
+- RFC 9728 or RFC 8414 metadata missing or malformed → exit non-zero with the underlying parse error.
+- Browser callback timeout → exit non-zero. No keychain write.
+- State mismatch on callback → exit non-zero. No keychain write.
+- Token exchange failure → exit non-zero. No keychain write.
+
+**Re-auth:** Running `dynmcp login <name>` against an MCP that already has cached credentials simply re-runs the flow and overwrites the keychain entry on success. There is no separate `refresh` subcommand — silent refresh is handled in-process by the proxy.
+
+### `dynmcp logout <name>`
+
+Removes the keychain entry for `<name>`. No network calls — the server is **not** notified (token revocation is not supported in v1).
+
+**Behavior:**
+
+1. Validate that `<name>` exists in the config and that its transport is `streamable-http` or `sse`.
+2. Delete the keychain entry at `service=dynmcp, account=<mcp-name>:<resource-server-origin>`.
+3. Print success to stderr. Missing entry is treated as success (idempotent).
+
+**Errors:** Same validation errors as `login`. Keychain write failures are surfaced.
+
+### Proxy Runtime Behavior
+
+The proxy's `UpstreamClient` for HTTP/SSE transports is wired with an `OAuthClientProvider` (the MCP SDK's auth integration point). The provider:
+
+- Reads the keychain entry for the upstream's account on every outbound request and attaches `Authorization: Bearer <access_token>`.
+- If the cached `access_token` is within 30 seconds of `expires_at`, performs a silent refresh against `token_endpoint` using `refresh_token` (if present) **before** the next outbound request. Successful refresh writes the new tokens back to the keychain atomically (single `setPassword` call). Failed refresh treats the credentials as invalid (see below).
+- If a request returns 401 mid-session, attempts exactly one silent refresh + retry. If the retry also 401s (or no refresh token is available), credentials are treated as invalid.
+
+**When credentials are missing or invalid:**
+
+- During `load_mcp` (lazy upstream): the upstream connection's `initialize` handshake fails with an `AuthRequiredError`. The error message returned to the agent is: *"Upstream MCP '<name>' requires authorization. Run `dynmcp login <name>` from your terminal, then retry `load_mcp`."* This failure **does not count toward the lazy-upstream retry budget** described in [`load_mcp`](#load_mcp) — auth-required failures are operator-actionable, not transient, and counting them would cause silent eviction before the user can act.
+- During startup (eager upstream): startup fails with the same actionable error message. The proxy refuses to start until either the credentials are obtained or the MCP is reconfigured.
+- During normal in-session use (loaded upstream, post-refresh 401): the offending host-facing request returns an error with the same actionable message. The MCP remains connected for non-auth-requiring operations (where applicable); subsequent auth-requiring requests will continue to fail until the user re-runs `dynmcp login`. The proxy does **not** disconnect, evict, or otherwise modify the catalog — recovery is one CLI command away.
+
+### Local Callback Server
+
+| Aspect | Value |
+|---|---|
+| Bind address | `127.0.0.1` only (never `0.0.0.0`) |
+| Port | OS-assigned ephemeral (request port `0`) |
+| Path | `/callback` (only path served) |
+| Methods | `GET` only |
+| Lifetime | Started immediately before opening the browser; shut down on first valid callback or after 60-second timeout, whichever comes first |
+| Other paths | Return `404` |
+| Other methods | Return `405` |
+
+The redirect URI sent to the authorization server is reconstructed each flow from the actual bound port (`http://127.0.0.1:<port>/callback`) and registered dynamically via DCR (when DCR is in use). When pre-registered client credentials are used, the operator must ensure their pre-registered client allows the loopback redirect pattern.
+
+### Concurrency
+
+`dynmcp login <name>` and `dynmcp logout <name>` must not run concurrently against the same `<name>`. Keychain writes are not transactional across processes; running two `login`s for the same MCP races to overwrite the entry. This is documented but not enforced — the surface area is small enough that a lock file would be more friction than benefit.
+
+The proxy's in-process silent refresh path serializes per-MCP via a single in-flight promise (same pattern as `inFlightLoads` in [`load_mcp`](#load_mcp)) so that bursts of host requests don't all trigger concurrent refresh attempts.
+
+---
+
+## Diagnostic Subcommands
+
+`dynmcp` exposes two non-proxy subcommands to help operators inspect their configuration and verify upstream MCPs are reachable: `dynmcp ls` and `dynmcp test`. Both are config-file-mode-only — single-MCP (`--`) mode has nothing to list and only one MCP to test (just run the proxy).
+
+### `dynmcp ls`
+
+Lists every upstream MCP declared in the resolved config along with its connection summary and auth status. Pure config + keychain read; no network calls.
+
+**Behavior:**
+
+1. Load and validate the config (same pipeline as the proxy commands).
+2. For each entry, gather: name, transport, mode (eager / lazy), endpoint, and auth status.
+3. Render the result as either an aligned text table (default) or a JSON array (`--json`).
+
+**Auth status values:**
+
+| Transport | Auth status |
+|---|---|
+| `stdio` | `n/a` (OAuth is out of scope for stdio) |
+| `streamable-http` / `sse`, with `headers.Authorization` set | `header` |
+| `streamable-http` / `sse`, with a valid keychain entry | `oauth: logged in (expires in <duration>)` where `<duration>` is humanized from the cached `expires_at` |
+| `streamable-http` / `sse`, no keychain entry | `oauth: not logged in` |
+
+When both static `headers.Authorization` and a keychain entry are present, the keychain entry wins in display (the OAuth token is what the proxy will actually attach), and the entry is annotated `oauth: logged in ... (header also set)`.
+
+**Output (default text):** an aligned table with `NAME`, `TRANSPORT`, `MODE`, `ENDPOINT`, `AUTH` columns. The endpoint for stdio is `command + args` joined by spaces, truncated with `...` if it exceeds the column width. URLs for http/sse are printed verbatim.
+
+**Output (`--json`):** an array of objects matching the table columns, plus a `description` field for lazy entries and an `auth.expires_at` epoch number where applicable.
+
+**Flags:**
+
+| Flag | Description |
+|---|---|
+| `--config <path>` / `-c` | Standard config path override. |
+| `--env <path>` / `-e` | Standard `.env` path override. |
+| `--json` | Emit JSON instead of the table. |
+
+**Constraints:**
+
+- Config-file mode only. Running `dynmcp ls` with no config (and no `--`) is an error like every other config-mode command.
+- The keychain read may prompt the user on macOS the first time. This is OS behavior, not something `dynmcp` can suppress.
+
+**Exit codes:** `0` if the config loads; non-zero on config error.
+
+### `dynmcp test [name]`
+
+Actively probes one or all upstreams and reports per-step results. Doubles as a "what's in this MCP?" introspection tool — single-MCP test mode prints the full discovered surface (tools, resources, resource templates, prompts).
+
+**Behavior (per MCP):**
+
+1. Resolve the config entry by name.
+2. Build the SDK transport via the same `transport-factory` used by the proxy.
+3. For OAuth-applicable upstreams, report whether a token is present and (if present) its remaining lifetime.
+4. Open the transport and complete the MCP `initialize` handshake. Capture the negotiated protocol version and advertised server capabilities.
+5. Call `tools/list`; if the server advertises `resources`, also call `resources/list` + `resources/templates/list`; if it advertises `prompts`, also call `prompts/list`. Failures within a single capability are reported as their own step and do not abort earlier successes.
+6. Disconnect cleanly. Lazy upstreams remain configured-but-not-loaded.
+
+**Output (single MCP, default):** a step-by-step pass/fail log followed by a `PASS` / `FAIL` verdict. On success, the full discovered surface is printed:
+
+- `Tools (N):` — bulleted list, sorted by name. Each line is `<name>: <description>` with the description truncated to ~100 characters and suffixed with `...` if longer.
+- `Resources (N):` — bulleted list, sorted by URI. Format `<uri>: <description>` (or `<uri>: <name>` if no description).
+- `Resource templates (N):` — bulleted list, sorted by URI template. Same format.
+- `Prompts (N):` — bulleted list, sorted by name.
+
+Empty sections (count of zero) are omitted entirely — no `Resources (0):` header.
+
+**Output (all MCPs, default — when `name` is omitted):** a single compact line per MCP with `PASS`/`FAIL` and counts only. Failures include a one-line reason. A final `Summary: <passed> passed, <failed> failed` line follows.
+
+**Output (`--json`):**
+
+- For single-MCP test: one object containing `name`, `result` (`"PASS"` / `"FAIL"`), `transport`, `endpoint`, `auth` (kind + status + remaining seconds), `protocol_version`, `capabilities`, `tools`, `resources`, `resource_templates`, `prompts`, and a `steps` array with per-step status and any error messages.
+- For all-MCP test: an array of those objects plus a top-level `summary: { passed, failed }`.
+
+**Flags:**
+
+| Flag | Description |
+|---|---|
+| `--config <path>` / `-c` | Standard config path override. |
+| `--env <path>` / `-e` | Standard `.env` path override. |
+| `--json` | Emit JSON instead of the formatted output. |
+| `--timeout <ms>` | Per-MCP timeout in milliseconds. Default: `15000`. The timeout covers transport open + initialize + all catalog queries. Exceeding it produces a FAIL with a clear timeout message. |
+
+**Constraints:**
+
+- Config-file mode only.
+- All-mode tests run **sequentially**, not in parallel, to keep output readable and avoid pile-ups on stdio MCPs that spawn child processes.
+- Failures during one MCP do not abort tests of the remaining MCPs in all-mode.
+- Lazy upstreams are tested by connecting transiently and disconnecting after. They are **not** permanently loaded; their lazy registration is independent of any in-process proxy and not affected.
+- Auth-required failures are reported as clean FAILs with the actionable `Run \`dynmcp login <name>\`` message. The retry-budget logic that applies to `load_mcp` is NOT in effect here — `test` is a one-shot diagnostic.
+
+**Exit codes:**
+
+- `dynmcp test <name>`: `0` if PASS, `1` if FAIL.
+- `dynmcp test` (no name): `0` if every MCP passed, `1` if any failed.
+
+---
+
 ## Runtime Behavior
 
 `dynmcp` runs locally only. It communicates with the agent host (e.g. an IDE or agent runner) over stdio. Upstream MCPs are connected to based on their configured transport — spawned as child processes for `stdio`, or connected to over HTTP for `streamable-http` and `sse`.
@@ -640,6 +921,10 @@ Subsequent `load_mcp` calls during runtime perform the equivalent of steps 4–5
 
 ```
 dynmcp [options] [-- <upstream-command> [upstream-args...]]
+dynmcp login <name> [options]
+dynmcp logout <name> [options]
+dynmcp ls [options]
+dynmcp test [name] [options]
 ```
 
 | Flag / Option | Short | Description |
@@ -651,8 +936,18 @@ dynmcp [options] [-- <upstream-command> [upstream-args...]]
 | `--` | | Delimiter; everything after is treated as the upstream MCP command (single-MCP mode) |
 
 **Mode resolution:**
-1. If `--` is present → single-MCP mode (config file ignored).
-2. Otherwise → config file mode (auto-discovered or via `-c`).
+1. If the first positional argument is `login`, `logout`, `ls`, or `test` → subcommand mode (see below).
+2. Otherwise if `--` is present → single-MCP proxy mode (config file ignored).
+3. Otherwise → config file proxy mode (auto-discovered or via `-c`).
+
+**Subcommands:**
+
+| Subcommand | Description |
+|---|---|
+| `login <name>` | Run the OAuth authorization-code flow for the named upstream MCP and persist tokens to the keychain. See [Upstream OAuth](#upstream-oauth). Requires config file mode. Accepts `--config` / `-c` and `--env` / `-e`. |
+| `logout <name>` | Delete the keychain entry for the named upstream MCP. Idempotent. Requires config file mode. Accepts `--config` / `-c` and `--env` / `-e`. |
+| `ls` | List every upstream MCP in the resolved config with its transport, mode, endpoint, and auth status. No network calls. See [Diagnostic Subcommands](#diagnostic-subcommands). Accepts `--config` / `-c`, `--env` / `-e`, and `--json`. |
+| `test [name]` | Probe one or all upstream MCPs by connecting, completing `initialize`, and printing the discovered tool / resource / prompt catalog. See [Diagnostic Subcommands](#diagnostic-subcommands). Accepts `--config` / `-c`, `--env` / `-e`, `--json`, and `--timeout <ms>`. |
 
 ---
 
@@ -669,6 +964,11 @@ The following are explicitly out of scope and must not be built unless this spec
 - Per-upstream log level control. `logging/setLevel` is broadcast to all upstreams; selective routing is not supported.
 - An `unload_mcp` counterpart to `load_mcp`. Loaded upstreams remain loaded for the proxy's lifetime; thrashing connections does not advance the context-management goal that motivated dynamic discovery in the first place. See [Dynamic Discovery](#dynamic-discovery).
 - Eager probing of lazy MCPs at startup to discover their capabilities. The capability constraint documented in [Dynamic Discovery > Capability Constraint](#capability-constraint) is the deliberate trade-off.
+- OAuth device-code grant, client-credentials grant, or any non-authorization-code OAuth flow. Authorization-code with PKCE covers interactive desktop use, which is the only scenario `dynmcp` supports. See [Upstream OAuth](#upstream-oauth).
+- Browser-launched OAuth from within the proxy process. All interactive auth flows are user-initiated via `dynmcp login`. The proxy never opens a browser.
+- Token revocation on `dynmcp logout`. The keychain entry is deleted locally; the upstream server is not notified.
+- Multiple identities per upstream MCP. One keychain entry per `<mcp-name>:<resource-server-origin>` pair.
+- Headless / CI authentication. OAuth flows require an interactive browser session.
 
 ---
 
@@ -682,3 +982,5 @@ The following are explicitly out of scope and must not be built unless this spec
 | 2026-05-18 | Added environment variable interpolation in config file leaf string values (`${VAR}` and `${VAR:-default}` syntax, `$${...}` escape). New top-level `env` field (`"enable"` default, `"dotenv"`, `"process"`, `"disable"`). New `--env` / `-e` CLI flag for custom `.env` path. Removed corresponding non-goal. |
 | 2026-05-18 | Added full-fidelity upstream proxying for resources, prompts, completion, logging, notifications, cancellation, progress, and server-initiated requests (`sampling/createMessage`, `elicitation/create`, `roots/list`). New "Proxy Behavior" section. Resource URIs and prompt names pass through verbatim with first-config-wins collision resolution; tool names remain namespaced. Removed corresponding non-goals. |
 | 2026-05-18 | Added dynamic discovery: per-entry optional `description` field in the config file marks an MCP as lazy. New `load_mcp` meta-tool (registered only when dynamic discovery is enabled) connects a lazy MCP on demand and returns its tools, resources, and prompts. New `<mcp_servers>` block in `discover_tool`'s description lists not-yet-loaded MCPs. New "Dynamic Discovery" section codifies the lazy lifecycle, idempotency / concurrency semantics, and the capability-aggregation constraint (lazy upstreams contribute nothing to host-`initialize` capability negotiation; their non-tool surfaces are best-effort on load). Added a three-strike retry budget on failed `load_mcp` attempts: after three consecutive failures the lazy entry is evicted, `tools/list_changed` fires, and subsequent calls receive "unknown server". New non-goals: no `unload_mcp`; no eager capability probing. |
+| 2026-05-24 | Added upstream OAuth (streamable-http / sse only). OAuth 2.1 authorization-code with PKCE, RFC 9728 protected-resource discovery, RFC 8414 authorization-server discovery, RFC 7591 Dynamic Client Registration. Optional `auth: { client_id, client_secret?, scope? }` on http/sse config entries skips DCR. Tokens persisted to OS keychain via `@napi-rs/keyring` (service: `dynmcp`, account: `<mcp-name>:<resource-server-origin>`). New CLI subcommands `dynmcp login <name>` and `dynmcp logout <name>`. Local 127.0.0.1 callback server on ephemeral port with 60s timeout. Auth-required failures during `load_mcp` are exempt from the lazy retry budget. Added non-goals: device-code/client-credentials flows, in-proxy browser launching, token revocation, multi-identity, headless auth. |
+| 2026-05-24 | Added diagnostic subcommands `dynmcp ls` and `dynmcp test [name]`. `ls` prints an aligned table of configured upstreams (name / transport / mode / endpoint / auth status), reading config + keychain only with no network calls. `test` probes one or all upstreams: opens transport, completes `initialize`, queries the advertised catalogs, and (in single-MCP mode) prints the full discovered tool / resource / prompt surface. All-MCP `test` runs sequentially and continues past failures, exiting non-zero if any failed. Both subcommands support `--json`; `test` adds `--timeout <ms>` (default 15000). |

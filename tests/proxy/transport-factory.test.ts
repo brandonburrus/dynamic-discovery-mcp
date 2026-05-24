@@ -7,7 +7,7 @@ import { createTransport } from "../../src/proxy/transport-factory.js";
 describe("createTransport", () => {
   describe("stdio", () => {
     it("constructs a StdioClientTransport with the command", () => {
-      const transport = createTransport({
+      const transport = createTransport("test", {
         transport: "stdio",
         command: "echo",
       });
@@ -15,7 +15,7 @@ describe("createTransport", () => {
     });
 
     it("accepts args and env in the stdio config", () => {
-      const transport = createTransport({
+      const transport = createTransport("test", {
         transport: "stdio",
         command: "echo",
         args: ["hello", "world"],
@@ -27,7 +27,7 @@ describe("createTransport", () => {
 
   describe("streamable-http", () => {
     it("constructs a StreamableHTTPClientTransport with the URL", () => {
-      const transport = createTransport({
+      const transport = createTransport("test", {
         transport: "streamable-http",
         url: "https://example.com/mcp",
       });
@@ -35,10 +35,19 @@ describe("createTransport", () => {
     });
 
     it("accepts headers in the streamable-http config", () => {
-      const transport = createTransport({
+      const transport = createTransport("test", {
         transport: "streamable-http",
         url: "https://example.com/mcp",
         headers: { Authorization: "Bearer token" },
+      });
+      expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+    });
+
+    it("accepts a pre-registered OAuth client_id via auth config", () => {
+      const transport = createTransport("test", {
+        transport: "streamable-http",
+        url: "https://example.com/mcp",
+        auth: { client_id: "pre-registered-id" },
       });
       expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
     });
@@ -46,7 +55,7 @@ describe("createTransport", () => {
 
   describe("sse", () => {
     it("constructs an SSEClientTransport with the URL", () => {
-      const transport = createTransport({
+      const transport = createTransport("test", {
         transport: "sse",
         url: "https://example.com/sse",
       });
@@ -54,7 +63,7 @@ describe("createTransport", () => {
     });
 
     it("accepts headers in the sse config", () => {
-      const transport = createTransport({
+      const transport = createTransport("test", {
         transport: "sse",
         url: "https://example.com/sse",
         headers: { Authorization: "Bearer token" },

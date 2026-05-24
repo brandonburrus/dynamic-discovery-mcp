@@ -8,11 +8,13 @@ A local CLI tool and MCP server that proxies one or more upstream MCPs and expos
 
 Key points from the current spec:
 - Local stdio only — no remote/HTTP deployment.
-- Two exposed tools: `discover_tool` (dynamic description from upstream catalog) and `use_tool` (static description, proxies calls).
+- Two exposed tools: `discover_tool` (dynamic description from upstream catalog) and `use_tool` (static description, proxies calls). A third, `load_mcp`, appears only when dynamic discovery is enabled.
 - All tool names are namespaced as `<mcp-name>/<tool-name>`.
 - Single upstream MCP: `dynmcp -- <command>`. Multiple upstream MCPs: config file (`mcp.json`, `.mcp.json`, or `-c <path>`).
 - Config file validated at runtime via Zod. The Zod schema is the source of truth for both runtime validation and the published JSON Schema served at https://dynamicmcp.tools/config.json.
 - Config file values support environment variable interpolation: `${VAR}`, `${VAR:-default}`, and `$${...}` escape. Controlled via top-level `env` field (`"enable"` default, `"dotenv"`, `"process"`, `"disable"`) and `--env` / `-e` CLI flag for custom `.env` paths.
+- Upstream OAuth for `streamable-http` / `sse` upstreams: out-of-band via `dynmcp login <name>` / `dynmcp logout <name>`. Tokens persisted to OS keychain via `@napi-rs/keyring`. The proxy never opens a browser; runtime auth failures surface as the actionable "run `dynmcp login <name>`" message. See `src/auth/AGENTS.md`.
+- Operator diagnostics: `dynmcp ls` (config + auth-status table, no network) and `dynmcp test [name]` (transient connect + full discovered catalog dump). Both support `--json`. See `src/diagnostics/AGENTS.md`.
 
 ## Project Conventions
 
@@ -35,7 +37,9 @@ Key points from the current spec:
 
 ```
 src/           # TypeScript source (entry: src/index.ts)
+  auth/        # OAuth 2.1 client for streamable-http / sse upstreams: keychain store, callback server, login/logout flows, and the OAuthClientProvider implementations wired into the proxy transports. See src/auth/AGENTS.md.
   config/      # Config file schema (Zod), loader (JSON + YAML), and JSON Schema generator
+  diagnostics/ # Operator-facing CLI subcommands: `dynmcp ls` (config + keychain inspection) and `dynmcp test` (transient upstream probe with full catalog dump). See src/diagnostics/AGENTS.md.
   proxy/       # Full-fidelity MCP proxy: upstream clients, orchestrator, server, catalogs, routers, capability aggregation. See src/proxy/AGENTS.md.
 scripts/       # Build-time scripts (e.g. generate-schema.ts writes the JSON Schema directly to docs/public/config.json)
 tests/         # Vitest unit tests (mirror of src/ structure)

@@ -5,6 +5,10 @@ description: Complete reference for the dynmcp command-line interface.
 
 ```
 dynmcp [options] [-- <upstream-command> [upstream-args...]]
+dynmcp login <name> [options]
+dynmcp logout <name> [options]
+dynmcp ls [options]
+dynmcp test [name] [options]
 ```
 
 ## Options
@@ -17,19 +21,29 @@ dynmcp [options] [-- <upstream-command> [upstream-args...]]
 | `--env <path>` | `-e` | Path to a custom `.env` file for [environment variable interpolation](/guides/environment-variables/). |
 | `--` | | Delimiter. Everything after is the upstream MCP command (single-MCP mode). |
 
+## Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `login <name>` | Run the OAuth authorization-code flow for an upstream MCP and persist tokens to the keychain. See the [OAuth Authentication guide](/guides/oauth-authentication/). Requires config file mode. |
+| `logout <name>` | Delete the OAuth keychain entry for an upstream MCP. Idempotent. Requires config file mode. |
+| `ls` | List configured upstream MCPs with transport, mode, endpoint, and auth status. No network calls. See the [Diagnostics reference](/reference/diagnostics/#dynmcp-ls). Accepts `--json`. Requires config file mode. |
+| `test [name]` | Probe one or all configured upstreams and print the discovered tool / resource / prompt catalog. See the [Diagnostics reference](/reference/diagnostics/#dynmcp-test). Accepts `--json` and `--timeout <ms>`. Requires config file mode. |
+
+Every subcommand accepts the same `--config` / `-c` and `--env` / `-e` flags as the proxy command.
+
 ## Mode resolution
 
-`dynmcp` runs in one of two modes.
+`dynmcp` runs in one of three modes:
 
-If `--` is present, it's single-MCP mode. Whatever comes after `--` is the upstream command, and any config file is ignored.
+1. If the first positional argument is `login`, `logout`, `ls`, or `test` → subcommand mode (see [Subcommands](#subcommands)).
+2. Otherwise, if `--` is present → single-MCP proxy mode. Whatever comes after `--` is the upstream command, and any config file is ignored.
+3. Otherwise → config file proxy mode. The config is located in this order:
+   1. Path passed to `-c` / `--config`.
+   2. `mcp.json` in the current working directory.
+   3. `.mcp.json` in the current working directory.
 
-Otherwise, it's config file mode. The config is located in this order:
-
-1. Path passed to `-c` / `--config`.
-2. `mcp.json` in the current working directory.
-3. `.mcp.json` in the current working directory.
-
-With neither `--` nor a config file, `dynmcp` exits with a clear error.
+With none of these present, `dynmcp` exits with a clear error.
 
 ## Examples
 
@@ -62,6 +76,42 @@ dynmcp -e ./secrets.env
 ```
 
 `--env` combined with `env: "process"` or `env: "disable"` is rejected at startup. There's no `.env` to load in those modes, so the flag would contradict itself.
+
+### OAuth login / logout
+
+```bash
+# Authenticate against a configured upstream MCP
+dynmcp login linear
+
+# Same, with an explicit config path
+dynmcp login linear --config ./mcp.json
+
+# Delete the stored tokens for an upstream MCP
+dynmcp logout linear
+```
+
+See the [OAuth Authentication guide](/guides/oauth-authentication/) for the full walkthrough and the [OAuth reference](/reference/oauth/) for field-level detail.
+
+### Listing and testing
+
+```bash
+# Show every configured MCP with transport, mode, endpoint, and auth status
+dynmcp ls
+
+# Same, as JSON for piping into jq / scripts
+dynmcp ls --json
+
+# Probe a single MCP and print its full discovered catalog
+dynmcp test linear
+
+# Probe every configured MCP and print a per-MCP summary
+dynmcp test
+
+# Override the per-MCP timeout for slow upstreams
+dynmcp test linear --timeout 30000
+```
+
+See the [Diagnostics reference](/reference/diagnostics/) for output details, JSON shapes, and exit codes.
 
 ## Exit behavior
 

@@ -42,7 +42,7 @@ Host  <──── stdio ────>  ProxyServer (SDK Server)
 | `resource-router.ts` | `ResourceRouter` — URI → upstream ownership map with first-wins collision resolution. Supports concrete URIs (exact match) and templates (literal prefix match). Concrete matches take precedence over template matches. |
 | `prompt-router.ts` | `PromptRouter` — prompt name → upstream ownership map. First-wins collision resolution. Simpler than the resource router (no templates, no prefix matching). |
 | `capability-aggregator.ts` | Pure function `aggregateCapabilities(upstreams[])` that ORs upstream capabilities into a single `ServerCapabilities` to advertise to the host. `tools` is always advertised (proxy always exposes the meta-tools); `tools.listChanged` is always `true` (proxy emits it on any upstream's list-changed). Aggregation runs over **eager** upstreams only — lazy ones contribute nothing at host-initialize time. |
-| `transport-factory.ts` | Builds the appropriate SDK transport (stdio, streamable-http, sse) from a single config entry. |
+| `transport-factory.ts` | Builds the appropriate SDK transport (stdio, streamable-http, sse) from a single config entry. For HTTP / SSE transports, constructs and wires a `ProxyOAuthProvider` (from `src/auth`) using the configured URL + optional `auth` block; the provider is inert when the upstream doesn't require OAuth and otherwise serves cached tokens / triggers silent refresh / throws `AuthRequiredError`. |
 | `lazy-registry.ts` | `LazyRegistry` — tracks lazy-loadable upstream MCPs (those declared in config with a `description` field). Preserves insertion (config-file) order. The orchestrator's `loadMcp` pipeline promotes entries out of here into the connected `UpstreamRegistry`. No "unloaded" state — once an entry is taken, it's gone for the proxy's lifetime. |
 
 ## Lazy loading / dynamic discovery
@@ -110,6 +110,7 @@ When the orchestrator is constructed with a non-empty `lazyMcps` Map, dynamic di
 - **Idempotency** — names already in `UpstreamRegistry` (eager or previously loaded) return the current listing with no notifications.
 - **Concurrency coalescing** — `inFlightLoads: Map<string, Promise<LoadMcpResult>>` returns the same in-flight promise for repeat calls.
 - **Atomic rollback** — failures during connect / initialize / catalog query call `registry.deleteOne(name)` and re-throw; the lazy entry stays in `LazyRegistry` for retry. No host notifications fire on a failed load.
+- **Auth-required failures bypass the retry budget.** `isAuthRequiredError(error)` (from `src/auth`) short-circuits the failure counter in the catch block. Auth failures are operator-actionable (run `dynmcp login`); counting them against the budget would evict an MCP the user just needs to authenticate, silently. See SPEC.md § "Upstream OAuth > Proxy Runtime Behavior".
 - **Commit phase** — `lazyRegistry.take(name)`, populate `toolsByMcp`/routers, `rebuildToolCatalog()`, emit the appropriate `notifyXListChanged` calls.
 
 The `runLoadPipeline` calls only execute after the registry connect succeeds. The catalog rebuild and notifications happen only on the commit phase, so a failure mid-pipeline cannot leak half-populated state to the host.

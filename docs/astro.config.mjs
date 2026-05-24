@@ -56,6 +56,10 @@ export default defineConfig({
 							slug: "guides/environment-variables",
 						},
 						{
+							label: "OAuth Authentication",
+							slug: "guides/oauth-authentication",
+						},
+						{
 							label: "Writing Descriptions",
 							slug: "guides/writing-descriptions",
 						},
@@ -67,6 +71,8 @@ export default defineConfig({
 						{ label: "CLI", slug: "reference/cli" },
 						{ label: "Config Schema", slug: "reference/config-schema" },
 						{ label: "Transports", slug: "reference/transports" },
+						{ label: "OAuth", slug: "reference/oauth" },
+						{ label: "Diagnostics", slug: "reference/diagnostics" },
 						{
 							label: "Tools",
 							collapsed: false,

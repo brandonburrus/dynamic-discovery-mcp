@@ -11,6 +11,16 @@
       "description": "AWS documentation, code samples, and best-practice guidance. Search and retrieve content from AWS docs, API references, What's New posts, architectural guidance, Well-Architected guidance, troubleshooting guides, CDK and CloudFormation templates, AWS Amplify docs, and the Strands Agents SDK docs. Also looks up regional availability of AWS services, APIs, and CloudFormation resources. Use when the task involves AWS services, infrastructure-as-code, or AWS application development.",
       "transport": "streamable-http",
       "url": "https://knowledge-mcp.global.api.aws"
+    },
+    "github": {
+      "description": "Search and retrieve information from GitHub repositories, issues, pull requests, and discussions. Use for tasks that involve code repositories, open source projects, bug tracking, feature requests, or community discussions on GitHub.",
+      "transport": "streamable-http",
+      "url": "https://api.githubcopilot.com/mcp",
+      "auth": {
+        "client_id": "${GITHUB_OAUTH_CLIENT_ID}",
+        "client_secret": "${GITHUB_OAUTH_CLIENT_SECRET}",
+        "scope": "repo"
+      }
     }
   }
 }

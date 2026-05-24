@@ -36,7 +36,7 @@ export async function startProxyFromConfig(
   const eagerMcps = new Map<string, EagerMcpConfig>();
   const lazyMcps = new Map<string, LazyMcpConfig>();
   for (const [name, entry] of Object.entries(config.mcp)) {
-    const transport = createTransport(entry);
+    const transport = createTransport(name, entry);
     if (entry.description !== undefined) {
       lazyMcps.set(name, { transport, description: entry.description });
     } else {

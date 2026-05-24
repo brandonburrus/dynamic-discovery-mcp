@@ -44,12 +44,34 @@ const httpUrl = z
     message: "URL must use http:// or https:// scheme",
   });
 
+/**
+ * Optional pre-registered OAuth client credentials for `streamable-http` and `sse`
+ * upstreams. When present, the `dynmcp login` flow uses these instead of performing
+ * RFC 7591 Dynamic Client Registration. Field values are interpolation targets so
+ * secrets can live in `.env` rather than the config file. See SPEC.md § "Upstream
+ * OAuth > Auth Config".
+ */
+const authConfig = z
+  .object({
+    client_id: z
+      .string()
+      .min(1, { message: "auth.client_id must be a non-empty string" })
+      .refine(value => value.trim().length > 0, {
+        message: "auth.client_id must not be whitespace-only",
+      }),
+    client_secret: z.string().min(1).optional(),
+    scope: z.string().min(1).optional(),
+  })
+  .strict()
+  .optional();
+
 const streamableHttpTransport = z
   .object({
     transport: z.literal("streamable-http"),
     description,
     url: httpUrl,
     headers: z.record(z.string(), z.string()).optional(),
+    auth: authConfig,
   })
   .strict();
 
@@ -59,6 +81,7 @@ const sseTransport = z
     description,
     url: httpUrl,
     headers: z.record(z.string(), z.string()).optional(),
+    auth: authConfig,
   })
   .strict();
 
