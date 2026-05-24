@@ -98,7 +98,7 @@ describe("list (dynmcp ls)", () => {
   it("reports oauth: not logged in when no keychain entry exists", async () => {
     const path = writeConfig({
       mcp: {
-        linear: { transport: "streamable-http", url: "https://mcp.linear.app" },
+        github: { transport: "streamable-http", url: "https://api.githubcopilot.com/mcp" },
       },
     });
 
@@ -109,12 +109,12 @@ describe("list (dynmcp ls)", () => {
   it("reports oauth: logged in with a humanized expiry when a keychain entry exists", async () => {
     const path = writeConfig({
       mcp: {
-        linear: { transport: "streamable-http", url: "https://mcp.linear.app" },
+        github: { transport: "streamable-http", url: "https://api.githubcopilot.com/mcp" },
       },
     });
     // Seed a keychain blob expiring 47 minutes from "now"
     memory.set(
-      "dynmcp linear:https://mcp.linear.app",
+      "dynmcp github:https://api.githubcopilot.com",
       JSON.stringify({
         version: 1,
         access_token: "tok",
@@ -126,7 +126,7 @@ describe("list (dynmcp ls)", () => {
           token_endpoint: "https://issuer.example.com/t",
         },
         resource_metadata: {
-          resource: "https://mcp.linear.app",
+          resource: "https://api.githubcopilot.com/mcp",
           authorization_servers: ["https://issuer.example.com"],
         },
       }),

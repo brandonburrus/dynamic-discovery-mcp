@@ -62,8 +62,8 @@ function freshBlob(overrides: Record<string, unknown> = {}): Record<string, unkn
 
 describe("buildKeychainAccount", () => {
   it("combines mcp name and url origin", () => {
-    expect(buildKeychainAccount("linear", "https://mcp.linear.app/foo/bar")).toBe(
-      "linear:https://mcp.linear.app",
+    expect(buildKeychainAccount("github", "https://api.githubcopilot.com/mcp/foo")).toBe(
+      "github:https://api.githubcopilot.com",
     );
   });
 

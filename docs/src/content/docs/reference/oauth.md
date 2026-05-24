@@ -43,13 +43,13 @@ Validation rules:
 ```json
 {
   "mcp": {
-    "linear": {
+    "github": {
       "transport": "streamable-http",
-      "url": "https://mcp.linear.app",
+      "url": "https://api.githubcopilot.com/mcp",
       "auth": {
-        "client_id": "${LINEAR_OAUTH_CLIENT_ID}",
-        "client_secret": "${LINEAR_OAUTH_CLIENT_SECRET}",
-        "scope": "read write"
+        "client_id": "${GITHUB_OAUTH_CLIENT_ID}",
+        "client_secret": "${GITHUB_OAUTH_CLIENT_SECRET}",
+        "scope": "repo"
       }
     }
   }
@@ -89,7 +89,7 @@ Deletes the keychain entry for one configured upstream MCP. No network calls; th
 |---|---|
 | Library | [`@napi-rs/keyring`](https://github.com/napi-rs/node-rs/tree/main/packages/keyring) (macOS Keychain, Linux libsecret, Windows Credential Manager) |
 | Service | `dynmcp` |
-| Account | `<mcp-name>:<resource-server-origin>` — e.g. `linear:https://mcp.linear.app` |
+| Account | `<mcp-name>:<resource-server-origin>` — e.g. `github:https://api.githubcopilot.com` |
 | Value | JSON blob containing the access token, refresh token, expiry, and OAuth server / resource metadata snapshot |
 
 The account format includes the resource server origin so that re-pointing an MCP at a different URL in config does not silently authenticate against stale tokens — the entry won't be found and a fresh `dynmcp login` is required.

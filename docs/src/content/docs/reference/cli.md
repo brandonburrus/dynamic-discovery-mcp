@@ -81,13 +81,13 @@ dynmcp -e ./secrets.env
 
 ```bash
 # Authenticate against a configured upstream MCP
-dynmcp login linear
+dynmcp login github
 
 # Same, with an explicit config path
-dynmcp login linear --config ./mcp.json
+dynmcp login github --config ./mcp.json
 
 # Delete the stored tokens for an upstream MCP
-dynmcp logout linear
+dynmcp logout github
 ```
 
 See the [OAuth Authentication guide](/guides/oauth-authentication/) for the full walkthrough and the [OAuth reference](/reference/oauth/) for field-level detail.
@@ -102,13 +102,13 @@ dynmcp ls
 dynmcp ls --json
 
 # Probe a single MCP and print its full discovered catalog
-dynmcp test linear
+dynmcp test github
 
 # Probe every configured MCP and print a per-MCP summary
 dynmcp test
 
 # Override the per-MCP timeout for slow upstreams
-dynmcp test linear --timeout 30000
+dynmcp test github --timeout 30000
 ```
 
 See the [Diagnostics reference](/reference/diagnostics/) for output details, JSON shapes, and exit codes.

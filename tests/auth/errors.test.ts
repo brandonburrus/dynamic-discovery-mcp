@@ -3,11 +3,11 @@ import { AuthRequiredError, isAuthRequiredError } from "../../src/auth/errors.js
 
 describe("AuthRequiredError", () => {
   it("carries the mcp name and produces an actionable message", () => {
-    const error = new AuthRequiredError("linear");
-    expect(error.mcpName).toBe("linear");
+    const error = new AuthRequiredError("github");
+    expect(error.mcpName).toBe("github");
     expect(error.name).toBe("AuthRequiredError");
-    expect(error.message).toContain("linear");
-    expect(error.message).toContain("dynmcp login linear");
+    expect(error.message).toContain("github");
+    expect(error.message).toContain("dynmcp login github");
   });
 });
 

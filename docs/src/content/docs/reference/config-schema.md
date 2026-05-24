@@ -99,13 +99,13 @@ Optional. Use this to supply pre-registered OAuth client credentials. When `auth
 
 ```json
 {
-  "linear": {
+  "github": {
     "transport": "streamable-http",
-    "url": "https://mcp.linear.app",
+    "url": "https://api.githubcopilot.com/mcp",
     "auth": {
-      "client_id": "${LINEAR_OAUTH_CLIENT_ID}",
-      "client_secret": "${LINEAR_OAUTH_CLIENT_SECRET}",
-      "scope": "read write"
+      "client_id": "${GITHUB_OAUTH_CLIENT_ID}",
+      "client_secret": "${GITHUB_OAUTH_CLIENT_SECRET}",
+      "scope": "repo"
     }
   }
 }

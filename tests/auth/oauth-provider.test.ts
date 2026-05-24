@@ -122,12 +122,12 @@ describe("ProxyOAuthProvider", () => {
 
   it("redirectToAuthorization throws AuthRequiredError naming the MCP", () => {
     const keychain = new KeychainStore("mcp", SERVER_URL);
-    const provider = new ProxyOAuthProvider("linear", keychain, undefined);
+    const provider = new ProxyOAuthProvider("github", keychain, undefined);
     expect(() => provider.redirectToAuthorization(new URL("https://x"))).toThrow(AuthRequiredError);
     try {
       provider.redirectToAuthorization(new URL("https://x"));
     } catch (error) {
-      expect((error as AuthRequiredError).mcpName).toBe("linear");
+      expect((error as AuthRequiredError).mcpName).toBe("github");
     }
   });
 

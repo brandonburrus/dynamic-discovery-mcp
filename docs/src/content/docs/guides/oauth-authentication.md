@@ -20,7 +20,7 @@ You'll know an MCP needs OAuth one of two ways:
 
 - The first time the proxy tries to use it, you'll see an error like:
 
-  > Upstream MCP "linear" requires authorization. Run `dynmcp login linear` from your terminal, then retry.
+  > Upstream MCP "github" requires authorization. Run `dynmcp login github` from your terminal, then retry.
 
 - The MCP's documentation tells you so up front.
 
@@ -46,12 +46,12 @@ What happens, step by step:
 The whole thing typically takes under 30 seconds.
 
 ```
-$ dynmcp login linear
-Probing https://mcp.linear.app for OAuth challenge...
+$ dynmcp login github
+Probing https://api.githubcopilot.com/mcp for OAuth challenge...
 Callback server listening on http://127.0.0.1:54321/callback
-Opening browser for authorization: https://linear.app/oauth/authorize?response_type=code&...
+Opening browser for authorization: https://github.com/login/oauth/authorize?response_type=code&...
 Waiting for browser callback (timeout 60s)...
-Successfully authenticated "linear".
+Successfully authenticated "github".
 ```
 
 ### What if the browser doesn't open?
@@ -71,8 +71,8 @@ dynmcp logout <name>
 Deletes the local keychain entry. The OAuth server is **not** notified — the token might still be technically valid until it expires server-side. If you need to revoke immediately, do it from the server's own admin UI.
 
 ```
-$ dynmcp logout linear
-Removed keychain credentials for "linear".
+$ dynmcp logout github
+Removed keychain credentials for "github".
 ```
 
 `logout` is idempotent. Running it when no entry exists is a no-op success.
@@ -90,14 +90,14 @@ Tokens live in your operating system's native credential store:
 `dynmcp` uses [`@napi-rs/keyring`](https://github.com/napi-rs/node-rs/tree/main/packages/keyring) for the native integration. Entries are stored under:
 
 - **Service:** `dynmcp`
-- **Account:** `<mcp-name>:<resource-server-origin>` (e.g. `linear:https://mcp.linear.app`)
+- **Account:** `<mcp-name>:<resource-server-origin>` (e.g. `github:https://api.githubcopilot.com`)
 - **Value:** A JSON blob containing the access token, refresh token, expiry, and OAuth server metadata.
 
 You can inspect (and delete) entries directly with your platform's keychain UI — search for "dynmcp" in Keychain Access on macOS, for example. There's intentionally no `dynmcp auth list` subcommand in v1; the OS UI is the authoritative view.
 
 ### Why include the server origin in the account name?
 
-If you re-point an MCP at a different URL in your config (e.g. `https://mcp.linear.app` → `https://mcp-staging.linear.app`), the old keychain entry won't be found — `dynmcp` will treat it as if you'd never logged in and ask you to log in fresh. This avoids the surprising case where stale tokens get sent to a different server than the one they were issued for.
+If you re-point an MCP at a different URL in your config (e.g. `https://api.githubcopilot.com/mcp` → `https://api.githubcopilot-staging.com/mcp`), the old keychain entry won't be found — `dynmcp` will treat it as if you'd never logged in and ask you to log in fresh. This avoids the surprising case where stale tokens get sent to a different server than the one they were issued for.
 
 ## Automatic refresh
 
@@ -114,13 +114,13 @@ If the server doesn't support DCR, or you have a corporate policy that requires 
 ```json
 {
   "mcp": {
-    "linear": {
+    "github": {
       "transport": "streamable-http",
-      "url": "https://mcp.linear.app",
+      "url": "https://api.githubcopilot.com/mcp",
       "auth": {
-        "client_id": "${LINEAR_OAUTH_CLIENT_ID}",
-        "client_secret": "${LINEAR_OAUTH_CLIENT_SECRET}",
-        "scope": "read write"
+        "client_id": "${GITHUB_OAUTH_CLIENT_ID}",
+        "client_secret": "${GITHUB_OAUTH_CLIENT_SECRET}",
+        "scope": "repo"
       }
     }
   }

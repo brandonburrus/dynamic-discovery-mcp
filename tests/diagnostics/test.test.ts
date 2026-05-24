@@ -118,24 +118,24 @@ const capture = (chunk: string): void => {
 
 describe("test (dynmcp test) — single MCP", () => {
   it("returns exit code 0 on a successful probe and prints the full surface", async () => {
-    scenarios.set("linear", {
+    scenarios.set("github", {
       capabilities: { tools: { listChanged: true }, resources: {}, prompts: {} },
       tools: [
         { name: "create_issue", description: "Create a new issue" },
         { name: "list_issues", description: "List issues" },
       ],
-      resources: [{ uri: "linear://projects", name: "projects" }],
-      templates: [{ uriTemplate: "linear://issue/{id}", name: "issue" }],
+      resources: [{ uri: "github://user", name: "user" }],
+      templates: [{ uriTemplate: "github://repo/{owner}/{name}", name: "repo" }],
       prompts: [{ name: "write-pr-description", description: "Generate PR description" }],
     });
     const path = writeConfig({
-      mcp: { linear: { transport: "streamable-http", url: "https://mcp.linear.app" } },
+      mcp: { github: { transport: "streamable-http", url: "https://api.githubcopilot.com/mcp" } },
     });
 
-    const exitCode = await runTest({ mcpName: "linear", configPath: path, write: capture });
+    const exitCode = await runTest({ mcpName: "github", configPath: path, write: capture });
     const out = writes.join("");
     expect(exitCode).toBe(0);
-    expect(out).toContain('Testing "linear"');
+    expect(out).toContain('Testing "github"');
     expect(out).toContain("Connected and initialized");
     expect(out).toContain("Tools (2):");
     expect(out).toContain("create_issue");
@@ -210,16 +210,16 @@ describe("test (dynmcp test) — single MCP", () => {
   });
 
   it("emits structured JSON when --json is set", async () => {
-    scenarios.set("linear", {
+    scenarios.set("github", {
       capabilities: { tools: {} },
       tools: [{ name: "t1", description: "d1" }],
     });
     const path = writeConfig({
-      mcp: { linear: { transport: "streamable-http", url: "https://mcp.linear.app" } },
+      mcp: { github: { transport: "streamable-http", url: "https://api.githubcopilot.com/mcp" } },
     });
 
     const exitCode = await runTest({
-      mcpName: "linear",
+      mcpName: "github",
       configPath: path,
       write: capture,
       json: true,
@@ -230,7 +230,7 @@ describe("test (dynmcp test) — single MCP", () => {
       result: string;
       tools: unknown[];
     };
-    expect(parsed.name).toBe("linear");
+    expect(parsed.name).toBe("github");
     expect(parsed.result).toBe("PASS");
     expect(parsed.tools).toHaveLength(1);
   });

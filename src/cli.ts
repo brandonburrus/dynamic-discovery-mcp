@@ -25,9 +25,9 @@ export const cli = new Command(packageJson.name)
       "  dynmcp -- npx -y chrome-devtools-mcp@latest\n" +
       "  dynmcp --config ./mcp.json\n" +
       "  dynmcp ls\n" +
-      "  dynmcp test linear\n" +
-      "  dynmcp login linear\n" +
-      "  dynmcp logout linear\n",
+      "  dynmcp test github\n" +
+      "  dynmcp login github\n" +
+      "  dynmcp logout github\n",
   )
   .option("-c, --config <path>", "Path to config file (JSON or YAML)")
   .option("-e, --env <path>", "Path to a .env file for environment variable interpolation")

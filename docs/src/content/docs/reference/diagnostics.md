@@ -20,9 +20,9 @@ dynmcp ls --json
 ```
 NAME              TRANSPORT          MODE    ENDPOINT                                AUTH
 chrome-devtools   stdio              lazy    npx -y chrome-devtools-mcp@latest       n/a
-filesystem        stdio              eager   npx -y @modelcontextprotocol/server...  n/a
-linear            streamable-http    eager   https://mcp.linear.app                  oauth: logged in (expires in 47m)
-notion            streamable-http    lazy    https://mcp.notion.com                  oauth: not logged in
+aws-knowledge     streamable-http    eager   https://knowledge-mcp.global.api.aws    n/a
+github            streamable-http    eager   https://api.githubcopilot.com/mcp       oauth: logged in (expires in 47m)
+remote-dcr        streamable-http    lazy    https://example.com/mcp                 oauth: not logged in
 remote-bearer     streamable-http    eager   https://api.example.com/mcp             header
 ```
 
@@ -59,10 +59,10 @@ remote-bearer     streamable-http    eager   https://api.example.com/mcp        
 ```json
 [
   {
-    "name": "linear",
+    "name": "github",
     "transport": "streamable-http",
     "mode": "eager",
-    "endpoint": "https://mcp.linear.app",
+    "endpoint": "https://api.githubcopilot.com/mcp",
     "auth": {
       "kind": "oauth",
       "status": "logged_in",
@@ -84,15 +84,15 @@ Probes one or all configured upstreams. For a single upstream, prints a step-by-
 
 ```bash
 dynmcp test                    # test every configured MCP
-dynmcp test linear             # test just one
-dynmcp test linear --json
+dynmcp test github             # test just one
+dynmcp test github --json
 dynmcp test --timeout 30000    # raise the per-MCP timeout
 ```
 
 ### Single-MCP output
 
 ```
-Testing "linear" (streamable-http, https://mcp.linear.app)
+Testing "github" (streamable-http, https://api.githubcopilot.com/mcp)
   [ok] OAuth token present (expires in 47m)
   [ok] Connected and initialized
   [ok] Capabilities: tools(listChanged), resources(subscribe,listChanged), prompts
@@ -101,22 +101,22 @@ Testing "linear" (streamable-http, https://mcp.linear.app)
   [ok] prompts/list returned 3 prompts
 
 Tools (23):
-  - create_issue: Create a new issue in a project
-  - list_issues: List issues with optional filtering
-  - update_issue: Update an existing issue's fields
+  - create_issue: Create a new issue in a repository
+  - list_issues: List issues in a repository with optional filtering
+  - get_pull_request: Read a pull request's metadata and review state
   - ...
 
 Resources (5):
-  - linear://projects: List of all projects
-  - linear://teams: List of all teams
+  - github://repos/{owner}: List repositories owned by a user or org
+  - github://user: The authenticated user's profile
   - ...
 
 Resource templates (2):
-  - linear://issue/{id}: Read a single issue by ID
-  - linear://project/{id}: Read a single project by ID
+  - github://repo/{owner}/{name}/issues/{number}: Read a single issue
+  - github://repo/{owner}/{name}/pulls/{number}: Read a single pull request
 
 Prompts (3):
-  - write-pr-description: Generate a PR description from an issue
+  - write-pr-description: Generate a PR description from issue context
   - ...
 
 Result: PASS
@@ -132,9 +132,9 @@ Tool, resource, and prompt descriptions are truncated to ~100 characters with `.
 Testing all configured upstreams (5)...
 
 [1/5] chrome-devtools (stdio) ... PASS (54 tools, 0 resources, 0 prompts)
-[2/5] filesystem (stdio) ... PASS (8 tools, 12 resources, 0 prompts)
-[3/5] linear (streamable-http) ... FAIL (auth required: run `dynmcp login linear`)
-[4/5] notion (streamable-http) ... PASS (45 tools, 0 resources, 3 prompts)
+[2/5] aws-knowledge (streamable-http) ... PASS (8 tools, 0 resources, 0 prompts)
+[3/5] github (streamable-http) ... FAIL (auth required: run `dynmcp login github`)
+[4/5] remote-dcr (streamable-http) ... PASS (45 tools, 0 resources, 3 prompts)
 [5/5] remote-bearer (streamable-http) ... PASS (3 tools, 0 resources, 0 prompts)
 
 Summary: 4 passed, 1 failed
@@ -183,15 +183,17 @@ A failure within `resources/list` doesn't abort `prompts/list` — each capabili
 
 ```json
 {
-  "name": "linear",
+  "name": "github",
   "result": "PASS",
   "transport": "streamable-http",
-  "endpoint": "https://mcp.linear.app",
+  "endpoint": "https://api.githubcopilot.com/mcp",
   "auth": { "kind": "oauth", "status": "valid", "expiresInSeconds": 2820 },
   "capabilities": { "tools": { "listChanged": true }, "resources": {} },
   "tools": [{ "name": "create_issue", "description": "..." }],
-  "resources": [{ "uri": "linear://projects", "name": "projects" }],
-  "resource_templates": [{ "uriTemplate": "linear://issue/{id}", "name": "issue" }],
+  "resources": [{ "uri": "github://user", "name": "user" }],
+  "resource_templates": [
+    { "uriTemplate": "github://repo/{owner}/{name}/issues/{number}", "name": "issue" }
+  ],
   "prompts": [{ "name": "write-pr-description", "description": "..." }],
   "steps": [
     { "label": "OAuth token present (expires in 47m)", "status": "ok" },
@@ -207,7 +209,7 @@ A failure within `resources/list` doesn't abort `prompts/list` — each capabili
   "summary": { "passed": 4, "failed": 1 },
   "results": [
     { "name": "chrome-devtools", "result": "PASS", "..." },
-    { "name": "linear", "result": "FAIL", "fail_reason": "auth required: run `dynmcp login linear`", "..." }
+    { "name": "github", "result": "FAIL", "fail_reason": "auth required: run `dynmcp login github`", "..." }
   ]
 }
 ```

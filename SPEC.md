@@ -636,29 +636,29 @@ Example:
 ```json
 {
   "mcp": {
-    "linear": {
+    "github": {
       "transport": "streamable-http",
-      "url": "https://mcp.linear.app",
+      "url": "https://api.githubcopilot.com/mcp",
       "auth": {
-        "client_id": "${LINEAR_OAUTH_CLIENT_ID}",
-        "client_secret": "${LINEAR_OAUTH_CLIENT_SECRET}",
-        "scope": "read write"
+        "client_id": "${GITHUB_OAUTH_CLIENT_ID}",
+        "client_secret": "${GITHUB_OAUTH_CLIENT_SECRET}",
+        "scope": "repo"
       }
     },
-    "notion": {
+    "remote-dcr": {
       "transport": "streamable-http",
-      "url": "https://mcp.notion.com"
+      "url": "https://example.com/mcp"
     }
   }
 }
 ```
 
-In this example, `linear` uses operator-supplied credentials, while `notion` relies on Dynamic Client Registration (no `auth` block).
+In this example, `github` uses operator-supplied credentials, while `remote-dcr` relies on Dynamic Client Registration (no `auth` block).
 
 Notes:
 
 - `auth` is **only** valid on `streamable-http` and `sse` entries. Validation rejects it on `stdio`.
-- `auth.client_id` and `auth.client_secret` are interpolation targets — values like `${LINEAR_OAUTH_CLIENT_ID}` work per [Environment Variable Interpolation](#environment-variable-interpolation).
+- `auth.client_id` and `auth.client_secret` are interpolation targets — values like `${GITHUB_OAUTH_CLIENT_ID}` work per [Environment Variable Interpolation](#environment-variable-interpolation).
 - Authorization-server endpoint URLs (`authorization_endpoint`, `token_endpoint`, `registration_endpoint`) are **always** discovered via RFC 8414 metadata. There is no config override for them — servers that don't expose RFC 8414 metadata are unsupported. This avoids drift between configured and actual endpoints.
 
 ### Keychain Storage
@@ -667,7 +667,7 @@ Notes:
 |---|---|
 | Library | `@napi-rs/keyring` (macOS Keychain, Linux libsecret, Windows Credential Manager) |
 | Service | `dynmcp` |
-| Account | `<mcp-name>:<resource-server-origin>` — e.g. `linear:https://mcp.linear.app` |
+| Account | `<mcp-name>:<resource-server-origin>` — e.g. `github:https://api.githubcopilot.com` |
 | Value | JSON blob (see schema below) |
 
 The account format includes the resource server origin so that re-pointing an MCP name at a different URL in config does not silently authenticate against stale tokens — the keychain entry simply won't be found and a fresh `dynmcp login` is required.
