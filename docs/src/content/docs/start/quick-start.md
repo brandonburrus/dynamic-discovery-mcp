@@ -49,3 +49,4 @@ Any host that can launch an MCP via a command will work. A JSON-style host confi
 - [Single MCP Mode](/guides/single-mcp/) — full details on `--` mode.
 - [Config File Mode](/guides/config-file/) — proxy multiple upstream MCPs at once.
 - [Dynamic Discovery](/guides/dynamic-discovery/) — defer whole MCPs until the agent asks for them.
+- [Scaffold a config from the CLI](/reference/cli/#scaffolding-a-config) — `dynmcp init` + `dynmcp add` build the config file for you instead of hand-authoring JSON.

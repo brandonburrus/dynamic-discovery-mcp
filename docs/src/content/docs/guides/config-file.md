@@ -13,6 +13,27 @@ npx dynmcp@latest
 npx dynmcp@latest --config ./my-config.json
 ```
 
+## Scaffolding with the CLI
+
+If you'd rather not author JSON by hand, the `init` and `add` subcommands build the same file for you:
+
+```bash
+# Create mcp.json with $schema set
+dynmcp init
+
+# Add a stdio upstream
+dynmcp add filesystem \
+  --command npx \
+  --arg -y --arg @modelcontextprotocol/server-filesystem --arg /tmp
+
+# Add a streamable-http upstream
+dynmcp add github \
+  --transport streamable-http \
+  --url https://api.githubcopilot.com/mcp
+```
+
+`init` writes the starter file (use `--yaml` for `mcp.yaml`, or `--path <path>` for a custom location). `add` constructs each entry from flags, validates against the transport schema, and writes it back into the file. See the [CLI reference](/reference/cli/#scaffolding-a-config) for the complete flag list, including OAuth client overrides, lazy entries via `--description`, and stdio env vars.
+
 ## File discovery
 
 Without a `--` command, `dynmcp` looks for a config file in this order:
