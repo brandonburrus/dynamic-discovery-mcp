@@ -85,16 +85,18 @@ const sseTransport = z
   })
   .strict();
 
-const transportConfig = z.discriminatedUnion("transport", [
+export const transportConfigSchema = z.discriminatedUnion("transport", [
   stdioTransport,
   streamableHttpTransport,
   sseTransport,
 ]);
 
+export type TransportConfig = z.infer<typeof transportConfigSchema>;
+
 export const mcpConfigSchema = z.object({
   env: envModeSchema.optional(),
   mcp: z
-    .record(mcpName, transportConfig)
+    .record(mcpName, transportConfigSchema)
     .refine(obj => Object.keys(obj).length > 0, { message: "At least one MCP must be configured" }),
 });
 

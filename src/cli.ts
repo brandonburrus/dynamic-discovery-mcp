@@ -6,6 +6,7 @@ import chalk from "chalk";
 import { login, logout } from "./auth/index.js";
 import { list, test } from "./diagnostics/index.js";
 import { startProxy, startProxyFromConfig } from "./proxy/index.js";
+import { add, init, type TransportKind } from "./scaffold/index.js";
 
 const cliBanner = chalk.bold.magentaBright(
   figlet.textSync("DYNAMIC MCP", {
@@ -24,6 +25,9 @@ export const cli = new Command(packageJson.name)
     "\nExamples:\n" +
       "  dynmcp -- npx -y chrome-devtools-mcp@latest\n" +
       "  dynmcp --config ./mcp.json\n" +
+      "  dynmcp init\n" +
+      "  dynmcp add filesystem --command npx --arg -y --arg @modelcontextprotocol/server-filesystem --arg /tmp\n" +
+      "  dynmcp add github --transport streamable-http --url https://api.githubcopilot.com/mcp\n" +
       "  dynmcp ls\n" +
       "  dynmcp test github\n" +
       "  dynmcp login github\n" +
@@ -65,6 +69,108 @@ export const cli = new Command(packageJson.name)
       process.exit(1);
     }
   });
+
+cli
+  .command("init")
+  .description("Write a starter config file (mcp.json by default) in the current directory.")
+  .option("--path <path>", "Explicit target path (extension determines format).")
+  .option("--yaml", "Write mcp.yaml instead of mcp.json (ignored if --path is set).")
+  .option("--force", "Overwrite an existing file.")
+  .action((options: { path?: string; yaml?: boolean; force?: boolean }) => {
+    try {
+      init({
+        ...(options.path !== undefined ? { path: options.path } : {}),
+        ...(options.yaml === true ? { yaml: true } : {}),
+        ...(options.force === true ? { force: true } : {}),
+      });
+    } catch (error) {
+      process.stderr.write(`dynmcp: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exit(1);
+    }
+  });
+
+const collectRepeatable = (value: string, previous: string[]): string[] => [...previous, value];
+
+cli
+  .command("add <name>")
+  .description("Insert a new MCP entry into the resolved config file.")
+  .option(
+    "-t, --transport <transport>",
+    "Transport: stdio | streamable-http | sse (default: stdio).",
+    "stdio",
+  )
+  .option("-c, --config <path>", "Path to config file (otherwise auto-discovered).")
+  .option("--description <text>", "Per-entry description; presence makes the entry lazy.")
+  .option("--command <cmd>", "(stdio) Command to spawn for the upstream MCP.")
+  .option(
+    "--arg <arg>",
+    "(stdio) Repeatable positional argument passed after --command.",
+    collectRepeatable,
+    [] as string[],
+  )
+  .option(
+    "--env <KEY=VAL>",
+    "(stdio) Repeatable env var for the spawned process.",
+    collectRepeatable,
+    [] as string[],
+  )
+  .option("--url <url>", "(http/sse) Endpoint URL.")
+  .option(
+    "--header <header>",
+    '(http/sse) Repeatable "Name: Value" header.',
+    collectRepeatable,
+    [] as string[],
+  )
+  .option("--client-id <id>", "(http/sse) Pre-registered OAuth client_id (skips DCR).")
+  .option("--client-secret <secret>", "(http/sse) Pre-registered OAuth client_secret.")
+  .option("--scope <scope>", "(http/sse) OAuth scope to request.")
+  .option("--force", "Overwrite an existing entry with the same name.")
+  .action(
+    (
+      name: string,
+      options: {
+        transport: string;
+        config?: string;
+        description?: string;
+        command?: string;
+        arg: string[];
+        env: string[];
+        url?: string;
+        header: string[];
+        clientId?: string;
+        clientSecret?: string;
+        scope?: string;
+        force?: boolean;
+      },
+    ) => {
+      try {
+        const transport = options.transport as TransportKind;
+        if (transport !== "stdio" && transport !== "streamable-http" && transport !== "sse") {
+          throw new Error(
+            `Invalid --transport '${options.transport}'. Must be one of: stdio, streamable-http, sse.`,
+          );
+        }
+        add({
+          name,
+          transport,
+          ...(options.config !== undefined ? { configPath: options.config } : {}),
+          ...(options.force === true ? { force: true } : {}),
+          ...(options.description !== undefined ? { description: options.description } : {}),
+          ...(options.command !== undefined ? { command: options.command } : {}),
+          ...(options.arg.length > 0 ? { args: options.arg } : {}),
+          ...(options.env.length > 0 ? { envVars: options.env } : {}),
+          ...(options.url !== undefined ? { url: options.url } : {}),
+          ...(options.header.length > 0 ? { headers: options.header } : {}),
+          ...(options.clientId !== undefined ? { clientId: options.clientId } : {}),
+          ...(options.clientSecret !== undefined ? { clientSecret: options.clientSecret } : {}),
+          ...(options.scope !== undefined ? { scope: options.scope } : {}),
+        });
+      } catch (error) {
+        process.stderr.write(`dynmcp: ${error instanceof Error ? error.message : String(error)}\n`);
+        process.exit(1);
+      }
+    },
+  );
 
 cli
   .command("login <name>")

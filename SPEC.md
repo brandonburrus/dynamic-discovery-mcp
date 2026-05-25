@@ -876,6 +876,84 @@ Empty sections (count of zero) are omitted entirely — no `Resources (0):` head
 
 ---
 
+## Config Management Subcommands
+
+`dynmcp` provides two non-proxy subcommands that scaffold and edit the config file so operators are not forced to hand-author JSON or YAML: `dynmcp init` and `dynmcp add`. Both are pure local-file operations; neither makes network calls nor touches the keychain.
+
+### `dynmcp init`
+
+Writes a starter config file in the current directory (or at an explicit path). Intended as the first step in a fresh project: `init` → `add` → run.
+
+**Behavior:**
+
+1. Determine the target path: `--path <path>` if provided, else `mcp.yaml` if `--yaml` is set, else `mcp.json` in the current working directory.
+2. Refuse to overwrite an existing file unless `--force` is set.
+3. Write a minimal skeleton:
+   - JSON: `{ "$schema": "https://dynamicmcp.tools/config.json", "mcp": {} }` with a trailing newline.
+   - YAML: a `# yaml-language-server: $schema=https://dynamicmcp.tools/config.json` directive comment followed by `mcp: {}`.
+4. Print the written path and a hint pointing at `dynmcp add` for the next step.
+
+**The written file is deliberately not yet runtime-valid** — the Zod schema requires `mcp` to contain at least one entry. The next `dynmcp add` (or a manual edit) makes it valid. This trade-off keeps `init` honest and makes `add` the canonical "add an MCP" path rather than baking placeholder entries into the skeleton.
+
+**Flags:**
+
+| Flag | Description |
+|---|---|
+| `--path <path>` | Explicit target path (relative to cwd or absolute). The extension determines format: `.yml` / `.yaml` → YAML, anything else → JSON. |
+| `--yaml` | Shortcut: write `mcp.yaml` instead of `mcp.json`. Ignored if `--path` is set. |
+| `--force` | Overwrite an existing file. |
+
+**Exit codes:** `0` on successful write; `1` on file-already-exists without `--force` or any I/O failure.
+
+### `dynmcp add <name>`
+
+Inserts a new MCP entry into the auto-discovered or explicitly specified config file. Inputs are supplied via flags; the entry is constructed, validated against the transport schema, and written back preserving the file's existing format (and YAML comments, where possible).
+
+**Behavior:**
+
+1. Validate `name` against the MCP-name pattern (`^[a-z0-9][a-z0-9-]*$`).
+2. Resolve the target config path (`--config` if provided, else auto-discover `mcp.json` then `.mcp.json` in cwd). Fail with a hint to run `dynmcp init` if no config is found.
+3. Read the file in raw form. **No environment-variable interpolation runs** — `${VAR}` references already in the file round-trip verbatim, and any `${VAR}` strings supplied via flags are written as literal text.
+4. Construct the entry from the provided flags. Required combinations:
+   - `stdio`: `--command <cmd>` required; `--arg <arg>` (repeatable) and `--env <KEY=VAL>` (repeatable) optional.
+   - `streamable-http` / `sse`: `--url <url>` required; `--header "Name: Value"` (repeatable), `--client-id`, `--client-secret`, `--scope` all optional. `--client-id` becomes required if `--client-secret` or `--scope` is provided (matching the schema's `auth` block shape).
+   - `--description <text>` is allowed for any transport and declares the entry lazy (enables dynamic discovery on the next proxy run).
+5. Validate the constructed entry against the transport discriminated-union schema. Reject before writing if invalid.
+6. Refuse to overwrite an existing entry with the same name unless `--force` is set.
+7. Write the file back:
+   - **JSON:** round-trip via `JSON.parse` / `JSON.stringify` with 2-space indentation and a trailing newline. JSON has no comments to lose; insertion order is preserved by V8 for string keys.
+   - **YAML:** edit via the `yaml` library's `Document` API so comments and most existing formatting are preserved. Comments inside the modified `mcp.<name>` subtree may not survive a round-trip; comments elsewhere are preserved.
+8. Print the path and the added entry name to stdout.
+
+**Flags:**
+
+| Flag | Description |
+|---|---|
+| `-t, --transport <stdio\|streamable-http\|sse>` | Transport for the new entry. Default: `stdio`. |
+| `-c, --config <path>` | Explicit config path. Otherwise auto-discovered (`mcp.json` then `.mcp.json` in cwd). |
+| `--description <text>` | Per-entry description. Presence makes the entry lazy. |
+| `--command <cmd>` | (stdio) Command to spawn. Required for stdio. |
+| `--arg <arg>` | (stdio) Repeatable positional argument passed after `--command`. Order is preserved. |
+| `--env <KEY=VAL>` | (stdio) Repeatable environment variable for the spawned child process. |
+| `--url <url>` | (http/sse) Endpoint URL. Required for http/sse. |
+| `--header "Name: Value"` | (http/sse) Repeatable header. Use double-quotes in your shell if the value contains a space. |
+| `--client-id <id>` | (http/sse) Pre-registered OAuth `client_id` (skips Dynamic Client Registration). |
+| `--client-secret <secret>` | (http/sse) Pre-registered OAuth `client_secret`. Requires `--client-id`. |
+| `--scope <scope>` | (http/sse) OAuth scope to request. Requires `--client-id`. |
+| `--force` | Overwrite an existing entry with the same name. |
+
+**Important:** the `add` subcommand's `--env <KEY=VAL>` flag sets upstream stdio environment variables; it is unrelated to the root `dynmcp` `--env <path>` / `-e` flag (which selects the `.env` file used for interpolation at runtime). `add` does not accept the `.env`-path flag because it never interpolates.
+
+**Constraints:**
+
+- Pure local-file operation. No network calls, no keychain reads, no env interpolation.
+- `add` validates only the single new entry, not the full file. Other entries that rely on env interpolation for validation are unaffected; running the proxy is still the way to confirm whole-file validity.
+- The schema's name pattern (`^[a-z0-9][a-z0-9-]*$`) is enforced before any file I/O.
+
+**Exit codes:** `0` on successful write; `1` on validation failure, missing required flag for the selected transport, name collision without `--force`, or any I/O failure.
+
+---
+
 ## Runtime Behavior
 
 `dynmcp` runs locally only. It communicates with the agent host (e.g. an IDE or agent runner) over stdio. Upstream MCPs are connected to based on their configured transport — spawned as child processes for `stdio`, or connected to over HTTP for `streamable-http` and `sse`.
@@ -921,6 +999,8 @@ Subsequent `load_mcp` calls during runtime perform the equivalent of steps 4–5
 
 ```
 dynmcp [options] [-- <upstream-command> [upstream-args...]]
+dynmcp init [options]
+dynmcp add <name> [options]
 dynmcp login <name> [options]
 dynmcp logout <name> [options]
 dynmcp ls [options]
@@ -936,7 +1016,7 @@ dynmcp test [name] [options]
 | `--` | | Delimiter; everything after is treated as the upstream MCP command (single-MCP mode) |
 
 **Mode resolution:**
-1. If the first positional argument is `login`, `logout`, `ls`, or `test` → subcommand mode (see below).
+1. If the first positional argument is `init`, `add`, `login`, `logout`, `ls`, or `test` → subcommand mode (see below).
 2. Otherwise if `--` is present → single-MCP proxy mode (config file ignored).
 3. Otherwise → config file proxy mode (auto-discovered or via `-c`).
 
@@ -944,6 +1024,8 @@ dynmcp test [name] [options]
 
 | Subcommand | Description |
 |---|---|
+| `init` | Write a starter config file (`mcp.json` by default; `mcp.yaml` with `--yaml`) in the current directory. See [Config Management Subcommands](#config-management-subcommands). Accepts `--path`, `--yaml`, `--force`. |
+| `add <name>` | Insert a new MCP entry into the resolved config file. See [Config Management Subcommands](#config-management-subcommands). Accepts `--transport` / `-t`, `--config` / `-c`, `--description`, `--command`, `--arg`, `--env`, `--url`, `--header`, `--client-id`, `--client-secret`, `--scope`, `--force`. |
 | `login <name>` | Run the OAuth authorization-code flow for the named upstream MCP and persist tokens to the keychain. See [Upstream OAuth](#upstream-oauth). Requires config file mode. Accepts `--config` / `-c` and `--env` / `-e`. |
 | `logout <name>` | Delete the keychain entry for the named upstream MCP. Idempotent. Requires config file mode. Accepts `--config` / `-c` and `--env` / `-e`. |
 | `ls` | List every upstream MCP in the resolved config with its transport, mode, endpoint, and auth status. No network calls. See [Diagnostic Subcommands](#diagnostic-subcommands). Accepts `--config` / `-c`, `--env` / `-e`, and `--json`. |
@@ -984,3 +1066,4 @@ The following are explicitly out of scope and must not be built unless this spec
 | 2026-05-18 | Added dynamic discovery: per-entry optional `description` field in the config file marks an MCP as lazy. New `load_mcp` meta-tool (registered only when dynamic discovery is enabled) connects a lazy MCP on demand and returns its tools, resources, and prompts. New `<mcp_servers>` block in `discover_tool`'s description lists not-yet-loaded MCPs. New "Dynamic Discovery" section codifies the lazy lifecycle, idempotency / concurrency semantics, and the capability-aggregation constraint (lazy upstreams contribute nothing to host-`initialize` capability negotiation; their non-tool surfaces are best-effort on load). Added a three-strike retry budget on failed `load_mcp` attempts: after three consecutive failures the lazy entry is evicted, `tools/list_changed` fires, and subsequent calls receive "unknown server". New non-goals: no `unload_mcp`; no eager capability probing. |
 | 2026-05-24 | Added upstream OAuth (streamable-http / sse only). OAuth 2.1 authorization-code with PKCE, RFC 9728 protected-resource discovery, RFC 8414 authorization-server discovery, RFC 7591 Dynamic Client Registration. Optional `auth: { client_id, client_secret?, scope? }` on http/sse config entries skips DCR. Tokens persisted to OS keychain via `@napi-rs/keyring` (service: `dynmcp`, account: `<mcp-name>:<resource-server-origin>`). New CLI subcommands `dynmcp login <name>` and `dynmcp logout <name>`. Local 127.0.0.1 callback server on ephemeral port with 60s timeout. Auth-required failures during `load_mcp` are exempt from the lazy retry budget. Added non-goals: device-code/client-credentials flows, in-proxy browser launching, token revocation, multi-identity, headless auth. |
 | 2026-05-24 | Added diagnostic subcommands `dynmcp ls` and `dynmcp test [name]`. `ls` prints an aligned table of configured upstreams (name / transport / mode / endpoint / auth status), reading config + keychain only with no network calls. `test` probes one or all upstreams: opens transport, completes `initialize`, queries the advertised catalogs, and (in single-MCP mode) prints the full discovered tool / resource / prompt surface. All-MCP `test` runs sequentially and continues past failures, exiting non-zero if any failed. Both subcommands support `--json`; `test` adds `--timeout <ms>` (default 15000). |
+| 2026-05-24 | Added config management subcommands `dynmcp init` and `dynmcp add <name>`. `init` writes a starter `mcp.json` (or `mcp.yaml` with `--yaml`) with `$schema` pre-set, refusing to overwrite without `--force`; the written file is deliberately not yet runtime-valid because the schema requires at least one MCP entry. `add` inserts a single MCP entry built from flag-based inputs (`--transport`, `--command`/`--arg`/`--env` for stdio, `--url`/`--header`/`--client-id`/`--client-secret`/`--scope` for http/sse, plus optional `--description` for lazy entries), auto-discovering the target config, validating only the new entry against the transport discriminated-union schema before writing, and preserving YAML comments via the `yaml` library's `Document` API. JSON round-trips with 2-space indentation. The `add` command never interpolates `${VAR}` references — they pass through verbatim — and does not accept the root `--env <path>` flag because it does not touch `.env`. |

@@ -41,6 +41,7 @@ src/           # TypeScript source (entry: src/index.ts)
   config/      # Config file schema (Zod), loader (JSON + YAML), and JSON Schema generator
   diagnostics/ # Operator-facing CLI subcommands: `dynmcp ls` (config + keychain inspection) and `dynmcp test` (transient upstream probe with full catalog dump). See src/diagnostics/AGENTS.md.
   proxy/       # Full-fidelity MCP proxy: upstream clients, orchestrator, server, catalogs, routers, capability aggregation. See src/proxy/AGENTS.md.
+  scaffold/    # Config management subcommands: `dynmcp init` (write a starter mcp.json/mcp.yaml) and `dynmcp add <name>` (insert an MCP entry from flag-based inputs). Validates via the transport schema, preserves YAML comments via the `yaml` Document API. See src/scaffold/AGENTS.md.
 scripts/       # Build-time scripts (e.g. generate-schema.ts writes the JSON Schema directly to docs/public/config.json)
 tests/         # Vitest unit tests (mirror of src/ structure)
 docs/          # Astro + Starlight documentation site, published to https://dynamicmcp.tools on release. See docs/AGENTS.md.
